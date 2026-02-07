@@ -1,0 +1,257 @@
+---
+import { servicios, barberos, formatearPrecio } from '../config/servicios';
+import { databases, DATABASE_ID, COLLECTION_DIAS_ESPECIALES } from '../lib/appwrite';
+import { Query } from 'appwrite';
+
+interface Props { errorBackend?: string; }
+const { errorBackend } = Astro.props;
+
+let excepcionesJSON = "[]";
+try {
+    const hoy = new Date().toISOString().split('T')[0];
+    const respuesta = await databases.listDocuments(
+        DATABASE_ID,
+        COLLECTION_DIAS_ESPECIALES,
+        [Query.greaterThanEqual('fecha', hoy)]
+    );
+    excepcionesJSON = JSON.stringify(respuesta.documents);
+} catch (e) {
+    console.error("Error cargando datos:", e);
+}
+---
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">
+
+<div class="booking-container">
+    {errorBackend && <div class="error-msg">⚠️ {errorBackend}</div>}
+
+    <form method="POST" class="form-card">
+        
+        <div class="section-block">
+            <h3 class="step-title">1. Selecciona el Servicio</h3>
+            <div class="options-container">
+                {servicios.map((s) => (
+                    <label class="option-card">
+                        <input type="radio" name="servicio" value={s.nombre} required>
+                        <div class="card-inner blue-theme">
+                            <span class="text-main">{s.nombre}</span>
+                            <span class="text-sub">{formatearPrecio(s.precio)}</span>
+                        </div>
+                    </label>
+                ))}
+            </div>
+        </div>
+
+        <div class="section-block">
+            <h3 class="step-title">2. Elige tu Barbero</h3>
+            <div class="options-container three-cols">
+                {barberos.map((b) => (
+                    <label class="option-card">
+                        <input type="radio" name="barbero" value={b.nombre} required>
+                        <div class="card-inner red-theme">
+                            <span class="text-main">{b.nombre}</span>
+                        </div>
+                    </label>
+                ))}
+            </div>
+        </div>
+
+        <div class="section-block">
+            <h3 class="step-title">3. ¿Cuándo vienes?</h3>
+            
+            <div class="inputs-container">
+                <div class="form-row">
+                    <input type="text" name="fecha" id="input-fecha" placeholder="Día" required readonly class="input-field pointer">
+                    <select name="hora" id="select-hora" required disabled class="input-field">
+                        <option value="" disabled selected>Hora</option>
+                    </select>
+                </div>
+
+                <div class="form-row">
+                    <input type="text" name="nombre" placeholder="Nombre" required class="input-field">
+                    <input type="text" name="apellido" placeholder="Apellido" required class="input-field">
+                </div>
+
+                <div class="form-row">
+                    <input type="tel" name="telefono" placeholder="WhatsApp (Ej: 11 1234 5678)" class="input-field full">
+                </div>
+            </div>
+        </div>
+
+        <button type="submit" class="btn-submit">RESERVAR TURNO</button>
+    </form>
+</div>
+
+<script is:inline src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script is:inline src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
+<script define:vars={{ excepcionesJSON }}>
+    // Pega aquí tu lógica de JS para flatpickr y los horarios
+    // (Si la necesitas de nuevo, pídemela y te la paso en un bloque aparte)
+</script>
+
+<style>
+    /* RESET BÁSICO */
+    * { box-sizing: border-box; }
+
+    .booking-container {
+        width: 100%;
+        max-width: 550px;
+        margin: 0 auto;
+        padding: 10px;
+    }
+
+    .form-card {
+        background: #0f172a;
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 1.5rem;
+        padding: 2.5rem 2rem; /* Más espacio interno general */
+        display: flex;
+        flex-direction: column;
+        gap: 2.5rem; /* Separación estándar en PC */
+    }
+
+    .step-title {
+        color: white;
+        font-family: var(--font-titles, sans-serif);
+        text-align: center;
+        margin-bottom: 1.2rem;
+        font-size: 1.3rem;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+    }
+
+    /* TARJETAS DE OPCIONES */
+    .options-container {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+    }
+    .three-cols { grid-template-columns: 1fr 1fr 1fr; }
+    
+    .option-card input { display: none; }
+    
+    .card-inner {
+        background: #1e293b;
+        border: 2px solid transparent;
+        padding: 15px;
+        border-radius: 16px; /* Bordes más redondeados */
+        text-align: center;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 90px; /* Altura base más grande */
+        transition: transform 0.2s, background 0.2s;
+        height: 100%;
+    }
+
+    .text-main { font-weight: bold; font-size: 0.95rem; color: #fff; text-transform: uppercase; }
+    .text-sub { font-size: 0.8rem; color: #94a3b8; margin-top: 6px; }
+
+    /* ESTADOS DE SELECCIÓN */
+    input:checked + .blue-theme { 
+        background: var(--color-primary, #002395); 
+        border-color: white; 
+        transform: scale(1.02);
+    }
+    input:checked + .red-theme { 
+        background: var(--color-secondary, #b91c1c); 
+        border-color: white;
+        transform: scale(1.02);
+    }
+
+    /* INPUTS (FLEXBOX PARA EVITAR SUPERPOSICIÓN) */
+    .inputs-container {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    .form-row {
+        display: flex;
+        gap: 15px;
+        width: 100%;
+    }
+
+    .input-field {
+        flex: 1;
+        width: 100%;
+        background: #1e293b;
+        border: 1px solid rgba(255,255,255,0.1);
+        color: white;
+        padding: 18px; /* Input más alto y cómodo */
+        border-radius: 12px;
+        font-size: 1rem;
+        text-align: center;
+        outline: none;
+        appearance: none;
+    }
+
+    .input-field:focus {
+        border-color: var(--color-primary, #002395);
+        background: #252f45;
+    }
+
+    .pointer { cursor: pointer; }
+
+    /* BOTÓN */
+    .btn-submit {
+        background: var(--color-secondary, #b91c1c);
+        color: white;
+        border: none;
+        padding: 22px; /* Botón más grande */
+        border-radius: 12px;
+        font-weight: bold;
+        font-size: 1.4rem;
+        cursor: pointer;
+        width: 100%;
+        margin-top: 15px;
+        font-family: var(--font-titles, sans-serif);
+        letter-spacing: 2px;
+        transition: 0.2s;
+    }
+    
+    .btn-submit:active { transform: scale(0.98); }
+
+    /* --- ESTILOS ESPECÍFICOS PARA CELULARES --- */
+    @media (max-width: 500px) {
+        
+        .form-card { 
+            padding: 2rem 1.5rem; /* Más padding lateral */
+            gap: 3.5rem; /* MUCHO MÁS espacio entre paso 1, 2 y 3 */
+        }
+
+        .step-title {
+            font-size: 1.5rem; /* Títulos más grandes en móvil */
+            margin-bottom: 1.5rem;
+        }
+        
+        /* Barberos en 2 columnas para que sean botones grandes */
+        .three-cols { grid-template-columns: 1fr 1fr; } 
+
+        .card-inner {
+            min-height: 110px; /* Tarjetas mucho más altas para tocar fácil */
+            padding: 20px;
+        }
+
+        .text-main { font-size: 1rem; }
+
+        /* Inputs uno debajo del otro */
+        .form-row {
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .input-field {
+            padding: 20px; /* Inputs más altos para dedos grandes */
+            font-size: 1.1rem; /* Texto más legible */
+        }
+
+        .btn-submit {
+            padding: 25px; /* Botón gigante para cerrar la venta */
+            font-size: 1.5rem;
+        }
+    }
+</style>
