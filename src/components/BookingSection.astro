@@ -6,6 +6,7 @@ import { Query } from 'appwrite';
 interface Props { errorBackend?: string; }
 const { errorBackend } = Astro.props;
 
+// --- 1. CARGA DE DÍAS ESPECIALES (BACKEND) ---
 let excepcionesJSON = "[]";
 try {
     const hoy = new Date().toISOString().split('T')[0];
@@ -16,7 +17,9 @@ try {
     );
     excepcionesJSON = JSON.stringify(respuesta.documents);
 } catch (e) {
-    console.error("Error cargando datos:", e);
+    console.error("Error Appwrite:", e);
+    // Si falla, seguimos con un array vacío para no romper el calendario
+    excepcionesJSON = "[]"; 
 }
 ---
 
@@ -62,7 +65,8 @@ try {
             
             <div class="inputs-container">
                 <div class="form-row">
-                    <input type="text" name="fecha" id="input-fecha" placeholder="Día" required readonly class="input-field pointer">
+                    <input type="text" name="fecha" id="input-fecha" placeholder="Toca para elegir día" required class="input-field pointer">
+                    
                     <select name="hora" id="select-hora" required disabled class="input-field">
                         <option value="" disabled selected>Hora</option>
                     </select>
@@ -85,14 +89,140 @@ try {
 
 <script is:inline src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script is:inline src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
+
 <script define:vars={{ excepcionesJSON }}>
-    // Pega aquí tu lógica de JS para flatpickr y los horarios
-    // (Si la necesitas de nuevo, pídemela y te la paso en un bloque aparte)
+    // Configuración de Horarios
+    const horariosConfig = {
+        0: null, // Domingo cerrado
+        1: { inicio: "10:00", fin: "19:00" }, 
+        2: { inicio: "10:00", fin: "20:00" },
+        3: { inicio: "10:00", fin: "19:00" },
+        4: { inicio: "10:00", fin: "20:00" },
+        5: { inicio: "10:00", fin: "19:00" },
+        6: { inicio: "10:00", fin: "20:00" }
+    };
+
+    // Aseguramos que sea un array válido aunque venga vacío
+    let diasEspeciales = [];
+    try {
+        diasEspeciales = JSON.parse(excepcionesJSON);
+    } catch (e) {
+        console.error("Error parseando JSON dias especiales", e);
+    }
+
+    const intervaloMinutos = 30;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const inputFecha = document.getElementById('input-fecha');
+        const selectHora = document.getElementById('select-hora');
+
+        if (!inputFecha || !selectHora) {
+            console.error("No se encontraron los inputs de fecha u hora");
+            return;
+        }
+
+        console.log("Iniciando Flatpickr...");
+
+        flatpickr(inputFecha, {
+            locale: "es",
+            minDate: "today",
+            dateFormat: "Y-m-d",
+            disableMobile: "true", // Importante para que use nuestro diseño
+            clickOpens: true,      // Fuerza apertura al clic
+            
+            // Bloqueo de días
+            disable: [
+                function(date) {
+                    const fechaStr = date.toISOString().split('T')[0];
+                    const diaSemana = date.getDay();
+                    
+                    // 1. Regla especial (vacaciones/feriado)
+                    const regla = diasEspeciales.find(d => d.fecha === fechaStr);
+                    if (regla && regla.cerrado) return true;
+
+                    // 2. Domingo cerrado
+                    return (diaSemana === 0);
+                }
+            ],
+
+            // Al elegir fecha -> Generar Horas
+            onChange: function(selectedDates, dateStr) {
+                console.log("Fecha seleccionada:", dateStr);
+                
+                selectHora.innerHTML = '<option value="" disabled selected>Cargando...</option>';
+                selectHora.disabled = true;
+
+                if (selectedDates.length === 0) return;
+
+                const fechaElegida = selectedDates[0];
+                const diaSemana = fechaElegida.getDay();
+                
+                // Buscar configuración de horario
+                let inicio = "10:00", fin = "20:00"; 
+                const configDia = horariosConfig[diaSemana];
+
+                // Si hay regla especial de horario, sobreescribe
+                const regla = diasEspeciales.find(d => d.fecha === dateStr);
+                if (regla && !regla.cerrado) {
+                    inicio = regla.hora_inicio;
+                    fin = regla.hora_fin;
+                } else if (configDia) {
+                    inicio = configDia.inicio;
+                    fin = configDia.fin;
+                } else {
+                    selectHora.innerHTML = '<option value="" disabled selected>Cerrado</option>';
+                    return;
+                }
+
+                // Generar opciones
+                selectHora.innerHTML = '<option value="" disabled selected>Selecciona hora</option>';
+                
+                let [hActual, mActual] = inicio.split(':').map(Number);
+                let [hFin, mFin] = fin.split(':').map(Number);
+                
+                let minActual = hActual * 60 + mActual;
+                let minFin = hFin * 60 + mFin;
+
+                const ahora = new Date();
+                const esHoy = fechaElegida.toDateString() === ahora.toDateString();
+
+                while (minActual < minFin) {
+                    let h = Math.floor(minActual / 60);
+                    let m = minActual % 60;
+                    let horaTexto = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+                    
+                    let mostrar = true;
+                    // Si es hoy, ocultar horas pasadas (+15 min margen)
+                    if (esHoy) {
+                        let horaCheck = new Date();
+                        horaCheck.setHours(h, m, 0, 0);
+                        if (horaCheck < new Date(ahora.getTime() + 15*60000)) mostrar = false;
+                    }
+
+                    if (mostrar) {
+                        let opt = document.createElement('option');
+                        opt.value = horaTexto;
+                        opt.textContent = horaTexto;
+                        selectHora.appendChild(opt);
+                    }
+                    minActual += intervaloMinutos;
+                }
+                
+                selectHora.disabled = false;
+            }
+        });
+    });
 </script>
 
 <style>
-    /* RESET BÁSICO */
+    /* RESET */
     * { box-sizing: border-box; }
+
+    /* --- FIX IMPORTANTE: CALENDARIO VISIBLE --- */
+    /* Esto asegura que el calendario se vea por encima de todo */
+    .flatpickr-calendar {
+        z-index: 9999 !important;
+    }
 
     .booking-container {
         width: 100%;
@@ -105,10 +235,10 @@ try {
         background: #0f172a;
         border: 1px solid rgba(255,255,255,0.1);
         border-radius: 1.5rem;
-        padding: 2.5rem 2rem; /* Más espacio interno general */
+        padding: 2.5rem 2rem;
         display: flex;
         flex-direction: column;
-        gap: 2.5rem; /* Separación estándar en PC */
+        gap: 3.5rem; 
     }
 
     .step-title {
@@ -121,7 +251,7 @@ try {
         text-transform: uppercase;
     }
 
-    /* TARJETAS DE OPCIONES */
+    /* TARJETAS */
     .options-container {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -135,45 +265,27 @@ try {
         background: #1e293b;
         border: 2px solid transparent;
         padding: 15px;
-        border-radius: 16px; /* Bordes más redondeados */
+        border-radius: 16px;
         text-align: center;
         cursor: pointer;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        min-height: 90px; /* Altura base más grande */
-        transition: transform 0.2s, background 0.2s;
+        min-height: 90px;
         height: 100%;
+        transition: 0.2s;
     }
 
     .text-main { font-weight: bold; font-size: 0.95rem; color: #fff; text-transform: uppercase; }
     .text-sub { font-size: 0.8rem; color: #94a3b8; margin-top: 6px; }
 
-    /* ESTADOS DE SELECCIÓN */
-    input:checked + .blue-theme { 
-        background: var(--color-primary, #002395); 
-        border-color: white; 
-        transform: scale(1.02);
-    }
-    input:checked + .red-theme { 
-        background: var(--color-secondary, #b91c1c); 
-        border-color: white;
-        transform: scale(1.02);
-    }
+    input:checked + .blue-theme { background: var(--color-primary, #002395); border-color: white; transform: scale(1.02); }
+    input:checked + .red-theme { background: var(--color-secondary, #b91c1c); border-color: white; transform: scale(1.02); }
 
-    /* INPUTS (FLEXBOX PARA EVITAR SUPERPOSICIÓN) */
-    .inputs-container {
-        display: flex;
-        flex-direction: column;
-        gap: 15px;
-    }
-
-    .form-row {
-        display: flex;
-        gap: 15px;
-        width: 100%;
-    }
+    /* INPUTS */
+    .inputs-container { display: flex; flex-direction: column; gap: 15px; }
+    .form-row { display: flex; gap: 15px; width: 100%; }
 
     .input-field {
         flex: 1;
@@ -181,27 +293,24 @@ try {
         background: #1e293b;
         border: 1px solid rgba(255,255,255,0.1);
         color: white;
-        padding: 18px; /* Input más alto y cómodo */
+        padding: 18px;
         border-radius: 12px;
         font-size: 1rem;
         text-align: center;
         outline: none;
-        appearance: none;
+        appearance: none; 
     }
 
-    .input-field:focus {
-        border-color: var(--color-primary, #002395);
-        background: #252f45;
-    }
+    .input-field:focus { border-color: var(--color-primary, #002395); background: #252f45; }
+    
+    /* CURSOR PARA FECHA */
+    #input-fecha { cursor: pointer; } 
 
-    .pointer { cursor: pointer; }
-
-    /* BOTÓN */
     .btn-submit {
         background: var(--color-secondary, #b91c1c);
         color: white;
         border: none;
-        padding: 22px; /* Botón más grande */
+        padding: 22px;
         border-radius: 12px;
         font-weight: bold;
         font-size: 1.4rem;
@@ -215,43 +324,11 @@ try {
     
     .btn-submit:active { transform: scale(0.98); }
 
-    /* --- ESTILOS ESPECÍFICOS PARA CELULARES --- */
     @media (max-width: 500px) {
-        
-        .form-card { 
-            padding: 2rem 1.5rem; /* Más padding lateral */
-            gap: 3.5rem; /* MUCHO MÁS espacio entre paso 1, 2 y 3 */
-        }
-
-        .step-title {
-            font-size: 1.5rem; /* Títulos más grandes en móvil */
-            margin-bottom: 1.5rem;
-        }
-        
-        /* Barberos en 2 columnas para que sean botones grandes */
-        .three-cols { grid-template-columns: 1fr 1fr; } 
-
-        .card-inner {
-            min-height: 110px; /* Tarjetas mucho más altas para tocar fácil */
-            padding: 20px;
-        }
-
-        .text-main { font-size: 1rem; }
-
-        /* Inputs uno debajo del otro */
-        .form-row {
-            flex-direction: column;
-            gap: 15px;
-        }
-
-        .input-field {
-            padding: 20px; /* Inputs más altos para dedos grandes */
-            font-size: 1.1rem; /* Texto más legible */
-        }
-
-        .btn-submit {
-            padding: 25px; /* Botón gigante para cerrar la venta */
-            font-size: 1.5rem;
-        }
+        .form-card { padding: 2rem 1.5rem; gap: 3rem; }
+        .three-cols { grid-template-columns: 1fr 1fr; }
+        .form-row { flex-direction: column; gap: 15px; }
+        .input-field { padding: 20px; font-size: 1.1rem; }
+        .card-inner { min-height: 110px; }
     }
 </style>
