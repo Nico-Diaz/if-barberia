@@ -83,13 +83,12 @@ const SUPABASE_KEY = import.meta.env.PUBLIC_SUPABASE_KEY;
 
             <div id="tab-bloqueos" class="tab-content" style="display: none;">
                 <h2>Bloquear Días</h2>
-                <div class="block-controls" style="align-items: center;">
+                <div class="block-controls">
                     <div class="input-icon-container" style="flex: 2;">
                         <input type="text" id="fecha-bloqueo" placeholder="Toca para elegir el día..." class="input-flatpickr" readonly>
                     </div>
                     <button id="btn-bloquear" class="btn-danger" style="flex: 1;">⛔ Bloquear Día</button>
                 </div>
-                
                 <h3 style="margin-top:20px; color:#94a3b8; font-size:0.9rem;">Días Cerrados:</h3>
                 <ul id="lista-bloqueos" class="simple-list"></ul>
             </div>
@@ -98,7 +97,7 @@ const SUPABASE_KEY = import.meta.env.PUBLIC_SUPABASE_KEY;
     </main>
 </Layout>
 
-<script type="module" define:vars={{ SUPABASE_URL, SUPABASE_KEY, NEGOCIO_ID: negocio.id }}>
+<script type="module" define:vars={{ SUPABASE_URL, SUPABASE_KEY, NEGOCIO_ID: negocio.id, SLUG: negocio.slug }}>
     import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
     const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -142,13 +141,11 @@ const SUPABASE_KEY = import.meta.env.PUBLIC_SUPABASE_KEY;
         }
 
         listaTurnos.innerHTML = data.map(t => {
-        // Formateamos mensaje de WhatsApp
-        // "Hola [Nombre], te escribo de [Negocio] para confirmar tu turno el [Fecha] a las [Hora]."
-        const telefono = t.cliente_telefono ? t.cliente_telefono.replace(/\D/g, '') : '';
-        const mensaje = `Hola ${t.cliente_nombre}, te escribo de la Barbería para confirmar tu turno el día ${t.fecha.split('-').reverse().join('/')} a las ${t.hora.slice(0,5)} hs. 💈`;
-        const linkWsp = telefono ? `https://wa.me/549${telefono}?text=${encodeURIComponent(mensaje)}` : '#';
+            const telefono = t.cliente_telefono ? t.cliente_telefono.replace(/\D/g, '') : '';
+            const mensaje = `Hola ${t.cliente_nombre}, te escribo de la Barbería para confirmar tu turno el día ${t.fecha.split('-').reverse().join('/')} a las ${t.hora.slice(0,5)} hs. 💈`;
+            const linkWsp = telefono ? `https://wa.me/549${telefono}?text=${encodeURIComponent(mensaje)}` : '#';
 
-        return `
+            return `
             <div class="card-turno">
                 <div class="turno-header">
                     <span class="fecha-hora">📅 ${t.fecha.split('-').reverse().join('/')} - ${t.hora.slice(0,5)} hs</span>
@@ -163,18 +160,18 @@ const SUPABASE_KEY = import.meta.env.PUBLIC_SUPABASE_KEY;
                 
                 <div class="turno-actions" style="display:flex; gap:10px; margin-top:15px; border-top:1px solid #334155; padding-top:10px;">
                     ${telefono ? `
-                        <a href="${linkWsp}" target="_blank" class="btn-wsp" style="flex:1; text-align:center; background:#22c55e; color:white; padding:8px; border-radius:6px; text-decoration:none; font-size:0.9rem; font-weight:bold;">
+                        <a href="${linkWsp}" target="_blank" class="btn-wsp" style="flex:1; text-align:center; background:#22c55e; color:white; padding:8px; border-radius:6px; text-decoration:none; font-size:0.9rem; font-weight:bold; display:flex; align-items:center; justify-content:center; gap:5px;">
                             📱 WhatsApp
                         </a>
-                    ` : '<span style="flex:1; text-align:center; color:#64748b; font-size:0.8rem; padding:8px;">Sin Teléfono</span>'}
+                    ` : '<span style="flex:1; text-align:center; color:#64748b; font-size:0.8rem; padding:8px; border:1px dashed #475569; border-radius:6px;">Sin Teléfono</span>'}
                     
-                    <button class="btn-delete-sm action-btn" data-action="delete-turno" data-id="${t.id}" title="Cancelar" style="position:static; background:#ef4444; color:white; border:none; border-radius:6px; width:40px; font-size:1.2rem;">
+                    <button class="btn-delete-sm action-btn" data-action="delete-turno" data-id="${t.id}" title="Cancelar" style="position:static; background:#ef4444; color:white; border:none; border-radius:6px; width:45px; font-size:1.2rem; cursor:pointer;">
                         🗑️
                     </button>
                 </div>
             </div>
-        `;
-    }).join('');
+            `;
+        }).join('');
     }
 
     async function cargarServicios() {
@@ -257,8 +254,6 @@ const SUPABASE_KEY = import.meta.env.PUBLIC_SUPABASE_KEY;
     async function cargarBloqueos() {
         const hoy = new Date().toISOString().split('T')[0];
         const { data } = await supabase.from('dias_especiales').select('*').eq('negocio_id', NEGOCIO_ID).gte('fecha', hoy);
-        
-        // MOSTRAR SOLO FECHA Y BOTÓN
         listaBloqueos.innerHTML = data ? data.map(d => `
             <li>
                 <span style="font-weight:bold; color:white;">📅 ${d.fecha.split('-').reverse().join('/')}</span>
@@ -304,7 +299,7 @@ const SUPABASE_KEY = import.meta.env.PUBLIC_SUPABASE_KEY;
                 document.getElementById(`week-${id}`).classList.toggle('open'); 
                 btn.classList.toggle('active');
             }
-            else if (action === 'delete-turno') { if(confirm('¿Borrar?')) { await supabase.from('turnos').delete().eq('id', id); cargarTurnos(); } }
+            else if (action === 'delete-turno') { if(confirm('¿Cancelar Turno?')) { await supabase.from('turnos').delete().eq('id', id); cargarTurnos(); } }
             else if (action === 'save-servicio') {
                 const nombre = document.getElementById(`name-${id}`).value;
                 const precio = document.getElementById(`price-${id}`).value;
@@ -347,31 +342,32 @@ const SUPABASE_KEY = import.meta.env.PUBLIC_SUPABASE_KEY;
         await supabase.from('profesionales').insert({ negocio_id: NEGOCIO_ID, nombre: form.get('nombre'), horarios: defaultH });
         e.target.reset(); cargarBarberos();
     });
-    
-    // --- LÓGICA DE BLOQUEO (SIN MOTIVO) ---
     document.getElementById('btn-bloquear').addEventListener('click', async () => {
         const fecha = document.getElementById('fecha-bloqueo').value;
-        // YA NO BUSCAMOS MOTIVO
-        
         if(!fecha) return alert('Por favor selecciona una fecha');
-        
-        // Guardamos "Cerrado" automáticamente como motivo interno
-        await supabase.from('dias_especiales').insert({ 
-            negocio_id: NEGOCIO_ID, 
-            fecha, 
-            motivo: 'Cerrado', 
-            cerrado: true 
-        });
-        
+        await supabase.from('dias_especiales').insert({ negocio_id: NEGOCIO_ID, fecha, motivo: 'Cerrado', cerrado: true });
         cargarBloqueos();
     });
-    
     document.getElementById('refresh-turnos').addEventListener('click', cargarTurnos);
 </script>
 
 <style is:global>
+    /* VARIABLES */
     :root { --barber-red: #D92525; --barber-blue: #1E3A8A; --bg-dark: #0f172a; --bg-card: #1e293b; --text-muted: #94a3b8; --border: #334155; }
-    body { margin: 0; background: var(--bg-dark); font-family: sans-serif; overflow-x: hidden; }
+    
+    /* ---------------------------------------------------- */
+    /* ESTILOS GLOBALES PARA EL BODY (SOLUCIÓN DE BORDES) */
+    /* ---------------------------------------------------- */
+    html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        min-height: 100vh;
+        background-color: var(--bg-dark);
+        font-family: sans-serif;
+        overflow-x: hidden;
+    }
+
     * { box-sizing: border-box; }
 
     /* LAYOUT & HEADER */
