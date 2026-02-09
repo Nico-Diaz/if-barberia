@@ -1,7 +1,9 @@
 import { defineConfig } from 'astro/config';
-import vercel from '@astrojs/vercel/server'; // <--- Importante: 'server'
+// ANTES: import vercel from '@astrojs/vercel/server';
+// AHORA: Se importa directo desde el paquete base
+import vercel from '@astrojs/vercel';
 
 export default defineConfig({
-  output: 'server', // <--- ESTO ES VITAL para que funcione el Login
+  output: 'server', // Esto sigue siendo vital para el Login
   adapter: vercel(),
 });
