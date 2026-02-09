@@ -1,0 +1,180 @@
+---
+import Layout from '../../layouts/Layout.astro';
+---
+
+<Layout title="Admin Login">
+    <main class="login-wrapper">
+        <div class="login-card">
+            <div class="brand-header">
+                <h1>Admin Panel</h1>
+                <div class="barber-stripe"></div>
+            </div>
+
+            <form id="login-form">
+                <div class="input-group">
+                    <label>Email</label>
+                    <input type="email" name="email" placeholder="admin@ejemplo.com" required>
+                </div>
+                
+                <div class="input-group">
+                    <label>Contraseña</label>
+                    <input type="password" name="password" placeholder="••••••••" required>
+                </div>
+
+                <div id="error-msg" class="error-msg" style="display: none;"></div>
+
+                <button type="submit" id="btn-login">INGRESAR 🔐</button>
+            </form>
+        </div>
+    </main>
+</Layout>
+
+<script>
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+    const SUPABASE_URL = import.meta.env.PUBLIC_SUPABASE_URL;
+    const SUPABASE_KEY = import.meta.env.PUBLIC_SUPABASE_KEY;
+    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const form = document.getElementById('login-form');
+    const btn = document.getElementById('btn-login');
+    const errorMsg = document.getElementById('error-msg');
+
+    // VERIFICAR SI YA ESTÁ LOGUEADO
+    async function checkSession() {
+        const { data } = await supabase.auth.getSession();
+        if (data.session) {
+            // Intentar recuperar el último negocio visitado
+            const lastSlug = localStorage.getItem('last_admin_slug');
+            if(lastSlug) {
+                window.location.href = `/admin/${lastSlug}/dashboard`;
+            } else {
+                // Si no hay historial, avisar (porque no sabemos a qué negocio mandarlo)
+                console.log("Sesión activa, pero no sé a qué dashboard ir.");
+            }
+        }
+    }
+    checkSession();
+
+    // LOGIN
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        btn.disabled = true;
+        btn.innerText = "Verificando...";
+        errorMsg.style.display = 'none';
+
+        const formData = new FormData(form);
+        const email = formData.get('email');
+        const password = formData.get('password');
+
+        const { data, error } = await supabase.auth.signInWithPassword({
+            email: email,
+            password: password
+        });
+
+        if (error) {
+            errorMsg.innerText = "❌ Credenciales incorrectas";
+            errorMsg.style.display = 'block';
+            btn.disabled = false;
+            btn.innerText = "INGRESAR 🔐";
+        } else {
+            btn.innerText = "¡Éxito!";
+            btn.style.background = "#22c55e";
+            
+            // Redirigir
+            const redirectUrl = localStorage.getItem('redirect_after_login');
+            if (redirectUrl) {
+                localStorage.removeItem('redirect_after_login');
+                window.location.href = redirectUrl;
+            } else {
+                // Si entró directo al login sin intentar ir a un dashboard
+                alert("Login correcto. Por favor ingresa nuevamente a la URL de tu panel de administración.");
+            }
+        }
+    });
+</script>
+
+<style is:global>
+    :root {
+        --bg-dark: #0f172a;
+        --bg-card: #1e293b;
+        --barber-red: #D92525;
+        --barber-blue: #1E3A8A;
+        --text-muted: #94a3b8;
+    }
+
+    body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        min-height: 100vh;
+        font-family: system-ui, sans-serif;
+        
+        /* FONDO EN EL BODY PARA CUBRIR TODO */
+        background-color: var(--bg-dark);
+        background-image: linear-gradient(
+            45deg,
+            rgba(217, 37, 37, 0.05) 25%, 
+            transparent 25%,
+            transparent 50%,
+            rgba(30, 58, 138, 0.05) 50%, 
+            rgba(30, 58, 138, 0.05) 75%,
+            transparent 75%,
+            transparent
+        );
+        background-size: 100px 100px;
+        
+        /* Centrado Flex Global */
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+</style>
+
+<style>
+    /* El wrapper ahora solo contiene la tarjeta, no define el fondo */
+    .login-wrapper {
+        width: 100%;
+        padding: 20px;
+        display: flex;
+        justify-content: center;
+    }
+    
+    .login-card { 
+        background: var(--bg-card); 
+        padding: 2.5rem; 
+        border-radius: 1.5rem; 
+        width: 100%; 
+        max-width: 400px;
+        box-shadow: 0 20px 50px rgba(0,0,0,0.5); 
+        border: 1px solid rgba(255,255,255,0.1);
+        backdrop-filter: blur(10px);
+    }
+
+    .brand-header { text-align: center; margin-bottom: 30px; }
+    .brand-header h1 { color: white; margin: 0; text-transform: uppercase; letter-spacing: 2px; font-size: 1.5rem; }
+    .barber-stripe { height: 6px; width: 100px; margin: 15px auto; background: repeating-linear-gradient(45deg, var(--barber-red), var(--barber-red) 10px, white 10px, white 20px, var(--barber-blue) 20px, var(--barber-blue) 30px, white 30px, white 40px); border-radius: 4px; }
+
+    .input-group { margin-bottom: 20px; }
+    label { display: block; color: var(--text-muted); font-size: 0.85rem; margin-bottom: 8px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
+    
+    input { 
+        width: 100%; 
+        background: #0f172a; 
+        border: 1px solid #334155; 
+        color: white; 
+        padding: 14px; 
+        border-radius: 8px; 
+        font-size: 1rem; 
+        outline: none; 
+        box-sizing: border-box; 
+        transition: 0.2s;
+    }
+    input:focus { border-color: var(--barber-blue); box-shadow: 0 0 0 3px rgba(30, 58, 138, 0.2); }
+
+    button { width: 100%; padding: 16px; background: var(--barber-blue); color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 1rem; cursor: pointer; transition: 0.2s; margin-top: 10px; text-transform: uppercase; letter-spacing: 1px; }
+    button:hover { filter: brightness(1.2); transform: translateY(-1px); }
+    button:disabled { opacity: 0.7; cursor: wait; transform: none; }
+
+    .error-msg { background: rgba(220, 38, 38, 0.2); color: #ef4444; padding: 12px; border-radius: 6px; text-align: center; margin-bottom: 20px; border: 1px solid rgba(220, 38, 38, 0.5); font-weight: bold; font-size: 0.9rem; }
+</style>

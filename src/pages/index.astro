@@ -1,84 +1,103 @@
 ---
+// src/pages/index.astro
 import Layout from '../layouts/Layout.astro';
-import BookingSection from '../components/BookingSection.astro';
-import { databases, DATABASE_ID, COLLECTION_TURNOS, COLLECTION_DIAS_ESPECIALES } from '../lib/appwrite';
-import { ID, Query } from 'appwrite';
-import { servicios } from '../config/servicios';
+import { createClient } from '@supabase/supabase-js';
 
-let mensajeError = "";
+// --- BLOQUE DE SEGURIDAD ---
+let negocios = [];
+let errorMensaje = null;
 
-if (Astro.request.method === 'POST') {
-  const formData = await Astro.request.formData();
-  const nombre = formData.get('nombre') as string;
-  const apellido = formData.get('apellido') as string;
-  const fecha = formData.get('fecha') as string;
-  const hora = formData.get('hora') as string;
-  const telefono = formData.get('telefono') as string;
-  const servicioId = formData.get('servicio') as string;
+try {
+    const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL;
+    const supabaseKey = import.meta.env.PUBLIC_SUPABASE_KEY;
 
-  try {
-    const servicioEncontrado = servicios.find(s => s.id === servicioId);
-    if (!servicioEncontrado) throw new Error("Servicio inválido.");
+    if (!supabaseUrl || !supabaseKey) {
+        throw new Error("Faltan las credenciales de Supabase en el archivo .env");
+    }
 
-    // 1. Validar si el horario ya está ocupado en Appwrite
-    const turnosExistentes = await databases.listDocuments(
-      DATABASE_ID,
-      COLLECTION_TURNOS,
-      [
-        Query.equal('fecha', fecha),
-        Query.equal('hora', hora)
-      ]
-    );
+    const supabase = createClient(supabaseUrl, supabaseKey);
 
-    if (turnosExistentes.total > 0) throw new Error(`El horario de las ${hora} ya está ocupado.`);
+    // Intentamos buscar los negocios
+    const { data, error } = await supabase.from('negocios').select('*');
+    
+    if (error) {
+        throw error;
+    }
+    
+    negocios = data || [];
 
-    // 2. Guardar el nuevo turno
-    await databases.createDocument(
-      DATABASE_ID,
-      COLLECTION_TURNOS,
-      ID.unique(),
-      {
-        nombre,
-        apellido,
-        fecha,
-        hora,
-        telefono,
-        servicio: servicioEncontrado.nombre
-      }
-    );
-
-    return Astro.redirect(`/exito?nombre=${nombre}&fecha=${fecha}&hora=${hora}`);
-
-  } catch (error: any) {
-    mensajeError = error.message || "Error al procesar el turno.";
-  }
+} catch (err) {
+    console.error("Error crítico en index.astro:", err);
+    errorMensaje = err.message;
 }
 ---
 
-<Layout title="Reservar Turno | IF Barbería">
-    <main class="app-wrapper">
-        <div class="brand-header">
-            <h1 style="font-family: var(--font-titles); font-size: 3rem; text-align: center;">
-				<span style="color: var(--color-primary);">IF</span> 
-				<span style="color: var(--color-white);">BARBERÍA</span>
-			</h1>
-            <div class="bar-decorator"></div>
-            <p>Reserva tu lugar exclusivo</p>
+<Layout title="Mis Clientes | Multi-Turnero">
+    <main class="central-hub">
+        <h1>MIS CLIENTES</h1>
+        <p>Selecciona un negocio para ver su turnero:</p>
+
+        {errorMensaje && (
+            <div class="error-box">
+                <h3>⚠️ Ocurrió un error</h3>
+                <p>{errorMensaje}</p>
+                <small>Revisa la consola (Terminal) para más detalles.</small>
+            </div>
+        )}
+
+        <div class="grid-negocios">
+            {negocios.length > 0 ? (
+                negocios.map((negocio) => (
+                    <a href={`/${negocio.slug}`} class="card-negocio" style={`border-color: ${negocio.color_primario}`}>
+                        <h2 style={`color: ${negocio.color_primario}`}>{negocio.nombre}</h2>
+                        <span class="badge">{negocio.tipo}</span>
+                        <p class="link">Ir al sitio &rarr;</p>
+                    </a>
+                ))
+            ) : (
+                !errorMensaje && <p class="empty-msg">No se encontraron negocios cargados en la base de datos.</p>
+            )}
         </div>
-        <BookingSection errorBackend={mensajeError} />
-        <footer class="mini-footer"><p>© 2026 IF Barbería</p></footer>
     </main>
 </Layout>
 
 <style>
-    /* Mantenemos los mismos estilos de la bandera de Francia que definimos antes */
-    .app-wrapper { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; }
-    .brand-header h1 { font-family: var(--font-titles); font-size: 3.5rem; letter-spacing: 4px; margin: 0; line-height: 1; }
-    .text-blue { color: var(--color-primary); }
-    .text-red { color: var(--color-secondary); }
-    .bar-decorator {
-        height: 4px; width: 60px;
-        background: linear-gradient(to right, var(--color-primary) 33%, var(--color-white) 33%, var(--color-white) 66%, var(--color-secondary) 66%);
-        margin: 10px auto;
+    .central-hub {
+        min-height: 100vh; background: #0f172a; color: white;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        padding: 20px;
     }
-</style>
+    h1 { letter-spacing: 5px; margin-bottom: 10px; text-align: center; line-height: 1.2; }
+    
+    .grid-negocios { 
+        display: grid; 
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); 
+        gap: 20px; width: 100%; max-width: 800px; margin-top: 30px; 
+    }
+    
+    .card-negocio {
+        background: #1e293b; padding: 25px; border-radius: 15px; border: 2px solid #333;
+        text-decoration: none; transition: 0.3s; display: flex; flex-direction: column; gap: 10px;
+    }
+    .card-negocio:hover { transform: translateY(-5px); background: #252f45; }
+    h2 { margin: 0; font-size: 1.5rem; }
+    .badge { 
+        background: #334155; color: #94a3b8; padding: 4px 10px; 
+        border-radius: 20px; font-size: 0.8rem; width: fit-content; text-transform: uppercase; 
+    }
+    .link { margin: 0; margin-top: auto; font-size: 0.9rem; color: white; opacity: 0.7; }
+
+    /* Estilos de Error */
+    .error-box {
+        background: rgba(220, 38, 38, 0.2);
+        border: 1px solid #dc2626;
+        padding: 20px;
+        border-radius: 10px;
+        text-align: center;
+        margin-top: 20px;
+        max-width: 600px;
+    }
+    .empty-msg { color: #94a3b8; font-style: italic; margin-top: 20px; }
+
+    /* RESPONSIVE */
+    @media (max-width:

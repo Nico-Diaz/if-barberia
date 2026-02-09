@@ -1,334 +1,304 @@
 ---
-import { servicios, barberos, formatearPrecio } from '../config/servicios';
-import { databases, DATABASE_ID, COLLECTION_DIAS_ESPECIALES } from '../lib/appwrite';
-import { Query } from 'appwrite';
+// src/components/BookingSection.astro
+const { negocio, servicios, profesionales } = Astro.props;
 
-interface Props { errorBackend?: string; }
-const { errorBackend } = Astro.props;
+// Formateador de dinero
+const formatMoney = (amount) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 }).format(amount);
 
-// --- 1. CARGA DE DÍAS ESPECIALES (BACKEND) ---
-let excepcionesJSON = "[]";
-try {
-    const hoy = new Date().toISOString().split('T')[0];
-    const respuesta = await databases.listDocuments(
-        DATABASE_ID,
-        COLLECTION_DIAS_ESPECIALES,
-        [Query.greaterThanEqual('fecha', hoy)]
-    );
-    excepcionesJSON = JSON.stringify(respuesta.documents);
-} catch (e) {
-    console.error("Error Appwrite:", e);
-    // Si falla, seguimos con un array vacío para no romper el calendario
-    excepcionesJSON = "[]"; 
-}
+// Variables
+const SUPABASE_URL = import.meta.env.PUBLIC_SUPABASE_URL;
+const SUPABASE_KEY = import.meta.env.PUBLIC_SUPABASE_KEY;
+
+// Horario por defecto (Fallback)
+const defaultHorarios = {
+    "1": {"i": "10:00", "f": "20:00", "activo": true},
+    "2": {"i": "10:00", "f": "20:00", "activo": true},
+    "3": {"i": "10:00", "f": "20:00", "activo": true},
+    "4": {"i": "10:00", "f": "20:00", "activo": true},
+    "5": {"i": "10:00", "f": "20:00", "activo": true},
+    "6": {"i": "10:00", "f": "20:00", "activo": true},
+    "0": {"i": "10:00", "f": "14:00", "activo": false}
+};
 ---
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">
-
-<div class="booking-container">
-    {errorBackend && <div class="error-msg">⚠️ {errorBackend}</div>}
-
-    <form method="POST" class="form-card">
-        
-        <div class="section-block">
-            <h3 class="step-title">1. Selecciona el Servicio</h3>
-            <div class="options-container">
-                {servicios.map((s) => (
-                    <label class="option-card">
-                        <input type="radio" name="servicio" value={s.nombre} required>
-                        <div class="card-inner blue-theme">
-                            <span class="text-main">{s.nombre}</span>
-                            <span class="text-sub">{formatearPrecio(s.precio)}</span>
-                        </div>
-                    </label>
-                ))}
-            </div>
-        </div>
-
-        <div class="section-block">
-            <h3 class="step-title">2. Elige tu Barbero</h3>
-            <div class="options-container three-cols">
-                {barberos.map((b) => (
-                    <label class="option-card">
-                        <input type="radio" name="barbero" value={b.nombre} required>
-                        <div class="card-inner red-theme">
-                            <span class="text-main">{b.nombre}</span>
-                        </div>
-                    </label>
-                ))}
-            </div>
-        </div>
-
-        <div class="section-block">
-            <h3 class="step-title">3. ¿Cuándo vienes?</h3>
-            
-            <div class="inputs-container">
-                <div class="form-row">
-                    <input type="text" name="fecha" id="input-fecha" placeholder="Toca para elegir día" required class="input-field pointer">
-                    
-                    <select name="hora" id="select-hora" required disabled class="input-field">
-                        <option value="" disabled selected>Hora</option>
-                    </select>
-                </div>
-
-                <div class="form-row">
-                    <input type="text" name="nombre" placeholder="Nombre" required class="input-field">
-                    <input type="text" name="apellido" placeholder="Apellido" required class="input-field">
-                </div>
-
-                <div class="form-row">
-                    <input type="tel" name="telefono" placeholder="WhatsApp (Ej: 11 1234 5678)" class="input-field full">
-                </div>
-            </div>
-        </div>
-
-        <button type="submit" class="btn-submit">RESERVAR TURNO</button>
-    </form>
-</div>
-
+<script is:inline src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script is:inline src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script is:inline src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
 
-<script define:vars={{ excepcionesJSON }}>
-    // Configuración de Horarios
-    const horariosConfig = {
-        0: null, // Domingo cerrado
-        1: { inicio: "10:00", fin: "19:00" }, 
-        2: { inicio: "10:00", fin: "20:00" },
-        3: { inicio: "10:00", fin: "19:00" },
-        4: { inicio: "10:00", fin: "20:00" },
-        5: { inicio: "10:00", fin: "19:00" },
-        6: { inicio: "10:00", fin: "20:00" }
-    };
+<div class="booking-wrapper">
+    <div id="status-box" class="status-msg" style="display: none;"></div>
 
-    // Aseguramos que sea un array válido aunque venga vacío
-    let diasEspeciales = [];
-    try {
-        diasEspeciales = JSON.parse(excepcionesJSON);
-    } catch (e) {
-        console.error("Error parseando JSON dias especiales", e);
-    }
+    <div class="card-form">
+        <form id="booking-form">
+            <div class="section-label">1. SERVICIO</div>
+            <div class="services-grid">
+                {servicios?.length > 0 ? servicios.map((s, index) => (
+                    <div class="service-item">
+                        <input type="radio" name="servicio" id={`s-${s.id}`} value={s.nombre} required checked={index === 0}>
+                        <label for={`s-${s.id}`} class="service-card primary-hover">
+                            <span class="service-name">{s.nombre}</span>
+                            <span class="service-price">{formatMoney(s.precio)}</span>
+                        </label>
+                    </div>
+                )) : <p class="error-txt">No hay servicios.</p>}
+            </div>
 
-    const intervaloMinutos = 30;
+            <div class="section-label">2. PROFESIONAL</div>
+            <div class="services-grid three-cols" id="container-profesionales">
+                {profesionales?.length > 0 ? profesionales.map((p, index) => (
+                    <div class="service-item">
+                        <input type="radio" name="profesional" id={`p-${p.id}`} value={p.nombre} 
+                               data-horarios={JSON.stringify(p.horarios || defaultHorarios)}
+                               required checked={index === 0} class="radio-pro">
+                        <label for={`p-${p.id}`} class="service-card secondary-hover">
+                            <span class="service-name">{p.nombre}</span>
+                        </label>
+                    </div>
+                )) : <p class="error-txt">No hay profesionales.</p>}
+            </div>
 
-    document.addEventListener('DOMContentLoaded', function() {
+            <div class="section-label">3. TUS DATOS</div>
+            <div class="row-group">
+                <div class="field-wrapper"><label>NOMBRE</label><input type="text" name="nombre" placeholder="Tu nombre..." required class="input-app"></div>
+                <div class="field-wrapper"><label>APELLIDO</label><input type="text" name="apellido" placeholder="Tu apellido..." required class="input-app"></div>
+            </div>
+            <div class="field-wrapper full-width"><label>WHATSAPP</label><input type="tel" name="telefono" placeholder="Ej: 11 1234 5678" class="input-app"></div>
+
+            <div class="section-label">4. TURNO</div>
+            <div class="row-group">
+                <div class="field-wrapper relative-wrapper">
+                    <label>FECHA</label>
+                    <div class="input-icon-container" id="container-fecha">
+                        <input type="text" name="fecha" id="input-fecha" required placeholder="Toca para elegir..." class="input-app" autocomplete="off">
+                        <span class="calendar-trigger">📅</span>
+                    </div>
+                </div>
+                <div class="field-wrapper">
+                    <label>HORA</label>
+                    <select name="hora" id="select-hora" required disabled class="input-app centered"><option value="" disabled selected>--:--</option></select>
+                </div>
+            </div>
+
+            <button type="submit" id="btn-submit" class="btn-app">CONFIRMAR TURNO</button>
+        </form>
+    </div>
+</div>
+
+<script define:vars={{ SUPABASE_URL, SUPABASE_KEY, NEGOCIO_ID: negocio.id, SLUG: negocio.slug }}>
+    window.addEventListener('load', async function() {
+        // Referencias
         const inputFecha = document.getElementById('input-fecha');
         const selectHora = document.getElementById('select-hora');
+        const containerFecha = document.getElementById('container-fecha');
+        const form = document.getElementById('booking-form');
+        const statusBox = document.getElementById('status-box');
+        const btnSubmit = document.getElementById('btn-submit');
+        const containerProfesionales = document.getElementById('container-profesionales');
 
-        if (!inputFecha || !selectHora) {
-            console.error("No se encontraron los inputs de fecha u hora");
-            return;
+        if(typeof supabase === 'undefined') return;
+        const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        let currentHorarios = {}; 
+
+        // 1. LEER HORARIOS DEL BARBERO SELECCIONADO
+        function updateHorariosBarbero() {
+            const selectedRadio = document.querySelector('input[name="profesional"]:checked');
+            if (selectedRadio) {
+                try {
+                    currentHorarios = JSON.parse(selectedRadio.dataset.horarios);
+                } catch(e) {
+                    console.error("Error leyendo JSON de horarios:", e);
+                }
+                
+                // Resetear fecha si cambia el barbero
+                if (inputFecha.value) {
+                    inputFecha.value = ""; 
+                    selectHora.innerHTML = '<option value="" disabled selected>--:--</option>';
+                    selectHora.disabled = true;
+                }
+            }
         }
 
-        console.log("Iniciando Flatpickr...");
+        if (containerProfesionales) {
+            containerProfesionales.addEventListener('change', updateHorariosBarbero);
+            updateHorariosBarbero(); 
+        }
 
-        flatpickr(inputFecha, {
-            locale: "es",
-            minDate: "today",
-            dateFormat: "Y-m-d",
-            disableMobile: "true", // Importante para que use nuestro diseño
-            clickOpens: true,      // Fuerza apertura al clic
+        // 2. OBTENER FERIADOS (BLOQUEOS)
+        const hoy = new Date();
+        const hoyStr = hoy.toLocaleDateString('en-CA'); // YYYY-MM-DD Local
+        let diasBloqueados = [];
+        
+        const { data: bloqueos } = await _supabase.from('dias_especiales')
+            .select('fecha')
+            .eq('negocio_id', NEGOCIO_ID)
+            .gte('fecha', hoyStr);
             
-            // Bloqueo de días
-            disable: [
-                function(date) {
-                    const fechaStr = date.toISOString().split('T')[0];
-                    const diaSemana = date.getDay();
+        if(bloqueos) diasBloqueados = bloqueos.map(d => d.fecha);
+
+        // 3. CONFIGURAR CALENDARIO
+        if (inputFecha && typeof flatpickr !== 'undefined') {
+            const fp = flatpickr(inputFecha, {
+                locale: "es", 
+                minDate: "today", 
+                dateFormat: "Y-m-d", 
+                disableMobile: true, 
+                appendTo: document.body,
+                disable: [ function(date) { 
+                    // Usamos toLocaleDateString para evitar problemas de zona horaria
+                    const diaStr = date.toLocaleDateString('en-CA'); 
+                    // Bloqueamos Domingos (0) O días en la lista negra
+                    return (date.getDay() === 0) || diasBloqueados.includes(diaStr);
+                }],
+                onChange: function(selected) {
+                    if(selected.length === 0) return;
                     
-                    // 1. Regla especial (vacaciones/feriado)
-                    const regla = diasEspeciales.find(d => d.fecha === fechaStr);
-                    if (regla && regla.cerrado) return true;
+                    const dateObj = selected[0];
+                    const diaSemana = dateObj.getDay().toString(); // 0=Dom, 1=Lun...
+                    const configDia = currentHorarios[diaSemana];
 
-                    // 2. Domingo cerrado
-                    return (diaSemana === 0);
-                }
-            ],
+                    console.log("Día seleccionado:", diaSemana, "Config:", configDia); // DEBUG
 
-            // Al elegir fecha -> Generar Horas
-            onChange: function(selectedDates, dateStr) {
-                console.log("Fecha seleccionada:", dateStr);
-                
-                selectHora.innerHTML = '<option value="" disabled selected>Cargando...</option>';
-                selectHora.disabled = true;
+                    selectHora.innerHTML = '<option value="" disabled selected>Calculando...</option>';
 
-                if (selectedDates.length === 0) return;
-
-                const fechaElegida = selectedDates[0];
-                const diaSemana = fechaElegida.getDay();
-                
-                // Buscar configuración de horario
-                let inicio = "10:00", fin = "20:00"; 
-                const configDia = horariosConfig[diaSemana];
-
-                // Si hay regla especial de horario, sobreescribe
-                const regla = diasEspeciales.find(d => d.fecha === dateStr);
-                if (regla && !regla.cerrado) {
-                    inicio = regla.hora_inicio;
-                    fin = regla.hora_fin;
-                } else if (configDia) {
-                    inicio = configDia.inicio;
-                    fin = configDia.fin;
-                } else {
-                    selectHora.innerHTML = '<option value="" disabled selected>Cerrado</option>';
-                    return;
-                }
-
-                // Generar opciones
-                selectHora.innerHTML = '<option value="" disabled selected>Selecciona hora</option>';
-                
-                let [hActual, mActual] = inicio.split(':').map(Number);
-                let [hFin, mFin] = fin.split(':').map(Number);
-                
-                let minActual = hActual * 60 + mActual;
-                let minFin = hFin * 60 + mFin;
-
-                const ahora = new Date();
-                const esHoy = fechaElegida.toDateString() === ahora.toDateString();
-
-                while (minActual < minFin) {
-                    let h = Math.floor(minActual / 60);
-                    let m = minActual % 60;
-                    let horaTexto = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-                    
-                    let mostrar = true;
-                    // Si es hoy, ocultar horas pasadas (+15 min margen)
-                    if (esHoy) {
-                        let horaCheck = new Date();
-                        horaCheck.setHours(h, m, 0, 0);
-                        if (horaCheck < new Date(ahora.getTime() + 15*60000)) mostrar = false;
+                    // A. Verificar si trabaja ese día
+                    if (!configDia || !configDia.activo) {
+                        selectHora.innerHTML = '<option disabled>NO ATIENDE HOY</option>';
+                        return;
                     }
 
-                    if (mostrar) {
-                        let opt = document.createElement('option');
-                        opt.value = horaTexto;
-                        opt.textContent = horaTexto;
+                    // B. Parsear horas de Inicio y Fin
+                    let [hA, mA] = configDia.i.split(':').map(Number);
+                    let [hF, mF] = configDia.f.split(':').map(Number);
+                    
+                    let minA = hA*60 + mA; 
+                    let minF = hF*60 + mF;
+
+                    // C. Lógica para "HOY": No mostrar horas pasadas
+                    const isToday = dateObj.toDateString() === new Date().toDateString();
+                    const now = new Date();
+                    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+                    // Si es HOY, adelantamos el inicio al momento actual + 30 min (aprox)
+                    if (isToday) {
+                        // Si ya pasó la hora de cierre, avisar
+                        if (currentMinutes >= minF) {
+                            selectHora.innerHTML = '<option disabled>CERRADO POR HOY</option>';
+                            return;
+                        }
+                        // Si la hora actual es mayor al inicio, ajustamos el inicio
+                        if (currentMinutes > minA) {
+                            // Redondear a la siguiente media hora
+                            const remainder = currentMinutes % 30;
+                            minA = currentMinutes + (30 - remainder);
+                        }
+                    }
+
+                    // D. Generar las opciones
+                    selectHora.innerHTML = '<option value="" disabled selected>Elegir Hora</option>';
+                    let count = 0;
+
+                    while(minA < minF) {
+                        let h = Math.floor(minA/60);
+                        let m = minA%60;
+                        let txt = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
+                        
+                        let opt = document.createElement('option'); 
+                        opt.value = txt; 
+                        opt.textContent = txt;
                         selectHora.appendChild(opt);
+                        
+                        minA += 30; // Intervalo de 30 mins
+                        count++;
                     }
-                    minActual += intervaloMinutos;
+
+                    if (count === 0) {
+                        selectHora.innerHTML = '<option disabled>SIN TURNOS DISPONIBLES</option>';
+                    } else {
+                        selectHora.disabled = false;
+                        selectHora.focus();
+                    }
                 }
-                
-                selectHora.disabled = false;
+            });
+            containerFecha.addEventListener('click', (e) => { e.preventDefault(); fp.open(); });
+        }
+
+        // SUBMIT
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            statusBox.style.display = 'none'; btnSubmit.innerText = "Guardando..."; btnSubmit.disabled = true;
+
+            const formData = new FormData(form);
+            const data = {
+                negocio_id: NEGOCIO_ID,
+                servicio: formData.get('servicio'),
+                profesional: formData.get('profesional'),
+                cliente_nombre: formData.get('nombre'),
+                cliente_apellido: formData.get('apellido'),
+                cliente_telefono: formData.get('telefono'),
+                fecha: formData.get('fecha'),
+                hora: formData.get('hora'),
+                estado: 'pendiente'
+            };
+
+            if(!data.fecha || !data.hora) {
+                statusBox.innerText = "⚠️ Falta fecha u hora"; statusBox.style.display = 'block'; statusBox.style.background = '#eab308'; statusBox.style.color = '#000';
+                btnSubmit.disabled = false; btnSubmit.innerText = "CONFIRMAR TURNO"; return;
+            }
+
+            try {
+                const { error } = await _supabase.from('turnos').insert(data);
+                if(error) throw error;
+                const params = new URLSearchParams({ nombre: data.cliente_nombre }).toString();
+                window.location.href = `/${SLUG}/exito?${params}`;
+            } catch (err) {
+                console.error(err); statusBox.innerText = "Error: " + err.message; statusBox.style.display = 'block'; statusBox.style.background = '#ef4444';
+                btnSubmit.disabled = false; btnSubmit.innerText = "CONFIRMAR TURNO";
             }
         });
     });
 </script>
 
-<style>
-    /* RESET */
+<style is:global>
+    /* ESTILOS (Mismos que antes) */
+    :root { --barber-red: #D92525; --barber-blue: #1E3A8A; --barber-white: #ffffff; --primary: var(--barber-blue); --secondary: var(--barber-red); }
+    .flatpickr-calendar { z-index: 99999999 !important; box-shadow: 0 0 50px rgba(0,0,0,0.8) !important; background: #1f2937 !important; position: fixed !important; top: 50% !important; left: 50% !important; transform: translate(-50%, -50%) !important; max-width: 90vw !important; }
     * { box-sizing: border-box; }
-
-    /* --- FIX IMPORTANTE: CALENDARIO VISIBLE --- */
-    /* Esto asegura que el calendario se vea por encima de todo */
-    .flatpickr-calendar {
-        z-index: 9999 !important;
-    }
-
-    .booking-container {
-        width: 100%;
-        max-width: 550px;
-        margin: 0 auto;
-        padding: 10px;
-    }
-
-    .form-card {
-        background: #0f172a;
-        border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 1.5rem;
-        padding: 2.5rem 2rem;
-        display: flex;
-        flex-direction: column;
-        gap: 3.5rem; 
-    }
-
-    .step-title {
-        color: white;
-        font-family: var(--font-titles, sans-serif);
-        text-align: center;
-        margin-bottom: 1.2rem;
-        font-size: 1.3rem;
-        letter-spacing: 1.5px;
-        text-transform: uppercase;
-    }
-
-    /* TARJETAS */
-    .options-container {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 12px;
-    }
+    .booking-wrapper { width: 100%; max-width: 550px; margin: 0 auto; padding: 0 10px; }
+    .status-msg { padding: 10px; border-radius: 8px; margin-bottom: 15px; text-align: center; font-weight: bold; }
+    .card-form { background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 1.5rem; padding: 1.5rem; position: relative; z-index: 1; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+    .section-label { font-family: system-ui, sans-serif; color: rgba(255,255,255,0.5); font-size: 0.9rem; letter-spacing: 1px; margin-bottom: 10px; margin-top: 25px; }
+    .section-label:first-child { margin-top: 0; }
+    .services-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; min-height: 50px; }
     .three-cols { grid-template-columns: 1fr 1fr 1fr; }
-    
-    .option-card input { display: none; }
-    
-    .card-inner {
-        background: #1e293b;
-        border: 2px solid transparent;
-        padding: 15px;
-        border-radius: 16px;
-        text-align: center;
-        cursor: pointer;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        min-height: 90px;
-        height: 100%;
-        transition: 0.2s;
-    }
-
-    .text-main { font-weight: bold; font-size: 0.95rem; color: #fff; text-transform: uppercase; }
-    .text-sub { font-size: 0.8rem; color: #94a3b8; margin-top: 6px; }
-
-    input:checked + .blue-theme { background: var(--color-primary, #002395); border-color: white; transform: scale(1.02); }
-    input:checked + .red-theme { background: var(--color-secondary, #b91c1c); border-color: white; transform: scale(1.02); }
-
-    /* INPUTS */
-    .inputs-container { display: flex; flex-direction: column; gap: 15px; }
-    .form-row { display: flex; gap: 15px; width: 100%; }
-
-    .input-field {
-        flex: 1;
-        width: 100%;
-        background: #1e293b;
-        border: 1px solid rgba(255,255,255,0.1);
-        color: white;
-        padding: 18px;
-        border-radius: 12px;
-        font-size: 1rem;
-        text-align: center;
-        outline: none;
-        appearance: none; 
-    }
-
-    .input-field:focus { border-color: var(--color-primary, #002395); background: #252f45; }
-    
-    /* CURSOR PARA FECHA */
-    #input-fecha { cursor: pointer; } 
-
-    .btn-submit {
-        background: var(--color-secondary, #b91c1c);
-        color: white;
-        border: none;
-        padding: 22px;
-        border-radius: 12px;
-        font-weight: bold;
-        font-size: 1.4rem;
-        cursor: pointer;
-        width: 100%;
-        margin-top: 15px;
-        font-family: var(--font-titles, sans-serif);
-        letter-spacing: 2px;
-        transition: 0.2s;
-    }
-    
-    .btn-submit:active { transform: scale(0.98); }
-
+    .error-txt { grid-column: 1 / -1; text-align: center; color: #ef4444; background: rgba(255,0,0,0.1); padding: 10px; border-radius: 8px; }
+    .service-item input { display: none; } 
+    .service-card { display: flex; flex-direction: column; align-items: center; justify-content: center; background: #0f172a; border: 2px solid transparent; border-radius: 12px; padding: 12px 5px; cursor: pointer; transition: 0.2s; height: 100%; text-align: center; min-height: 80px; }
+    .service-name { font-weight: bold; font-size: 0.85rem; color: white; text-transform: uppercase; line-height: 1.2; word-break: break-word; }
+    .service-price { font-size: 0.8rem; color: #94a3b8; margin-top: 5px; }
+    .primary-hover:hover, input:checked + .primary-hover { background: var(--barber-blue); border-color: white; transform: translateY(-2px); }
+    .secondary-hover:hover, input:checked + .secondary-hover { background: var(--barber-red); border-color: white; transform: translateY(-2px); }
+    .row-group { display: flex; gap: 15px; margin-bottom: 15px; }
+    .field-wrapper { flex: 1; display: flex; flex-direction: column; gap: 5px; }
+    .full-width { margin-bottom: 15px; }
+    .field-wrapper label { font-size: 0.75rem; font-weight: bold; color: #94a3b8; margin-left: 5px; }
+    .input-app { width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.1); color: white; padding: 14px 15px; border-radius: 10px; font-size: 1rem; outline: none; transition: 0.2s; cursor: pointer; }
+    .input-app:focus { border-color: var(--barber-blue); background: #172033; box-shadow: 0 0 15px rgba(30, 58, 138, 0.3); }
+    .centered { text-align: center; }
+    .btn-app { width: 100%; color: white; background-color: var(--barber-red); border: none; padding: 16px; border-radius: 12px; font-family: system-ui, sans-serif; font-size: 1.2rem; letter-spacing: 1px; cursor: pointer; margin-top: 25px; transition: all 0.3s ease; position: relative; overflow: hidden; border: 2px solid var(--barber-red); }
+    .btn-app:hover { transform: scale(0.98); border-color: white; background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,0.2) 10px, rgba(255,255,255,0.2) 20px); background-size: 200% 200%; animation: moveStripes 2s linear infinite; }
+    .btn-app:disabled { opacity: 0.5; cursor: wait; animation: none; }
+    @keyframes moveStripes { 0% { background-position: 0 0; } 100% { background-position: 60px 0; } }
+    .relative-wrapper { position: relative; }
+    .input-icon-container { position: relative; width: 100%; cursor: pointer; }
+    .calendar-trigger { position: absolute; right: 15px; top: 50%; transform: translateY(-50%); cursor: pointer; font-size: 1.2rem; pointer-events: none; }
     @media (max-width: 500px) {
-        .form-card { padding: 2rem 1.5rem; gap: 3rem; }
+        .card-form { padding: 1.2rem 0.8rem; }
+        .row-group { flex-direction: column; gap: 10px; }
         .three-cols { grid-template-columns: 1fr 1fr; }
-        .form-row { flex-direction: column; gap: 15px; }
-        .input-field { padding: 20px; font-size: 1.1rem; }
-        .card-inner { min-height: 110px; }
+        .input-app { padding: 12px; font-size: 16px; }
+        .btn-app { font-size: 1.1rem; padding: 14px; }
     }
 </style>

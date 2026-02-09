@@ -1,0 +1,492 @@
+---
+// src/pages/admin/[slug]/dashboard.astro
+
+// 1. IMPORT
+import Layout from '../../../layouts/Layout.astro';
+import { createClient } from '@supabase/supabase-js';
+
+export async function getStaticPaths() {
+  const supabase = createClient(import.meta.env.PUBLIC_SUPABASE_URL, import.meta.env.PUBLIC_SUPABASE_KEY);
+  const { data: negocios } = await supabase.from('negocios').select('slug');
+  return negocios ? negocios.map((n) => ({ params: { slug: n.slug } })) : [];
+}
+
+const { slug } = Astro.params;
+const supabase = createClient(import.meta.env.PUBLIC_SUPABASE_URL, import.meta.env.PUBLIC_SUPABASE_KEY);
+const { data: negocio } = await supabase.from('negocios').select('*').eq('slug', slug).single();
+
+if (!negocio) return Astro.redirect('/404');
+
+const SUPABASE_URL = import.meta.env.PUBLIC_SUPABASE_URL;
+const SUPABASE_KEY = import.meta.env.PUBLIC_SUPABASE_KEY;
+---
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">
+<script is:inline src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script is:inline src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
+
+<Layout title={`Admin - ${negocio.nombre}`}>
+    <main class="admin-wrapper" style="display: none;" id="main-admin">
+        
+        <header class="admin-header">
+            <div class="header-inner">
+                <div class="brand">
+                    <span class="icon">⚙️</span>
+                    <h1>PANEL DE CONTROL</h1>
+                </div>
+                <button id="btn-logout" class="btn-logout">
+                    <span class="text">Cerrar Sesión</span> 
+                    <span class="icon-exit">🔓</span>
+                </button>
+            </div>
+        </header>
+
+        <nav class="admin-nav">
+            <button class="tab-btn active" id="btn-turnos">📅 Agenda</button>
+            <button class="tab-btn" id="btn-servicios">💰 Servicios</button>
+            <button class="tab-btn" id="btn-equipo">💈 Equipo</button>
+            <button class="tab-btn" id="btn-bloqueos">⛔ Bloqueos</button>
+        </nav>
+
+        <div class="content-area">
+            
+            <div id="tab-turnos" class="tab-content active">
+                <div class="toolbar">
+                    <h2>Próximos Turnos</h2>
+                    <button id="refresh-turnos" class="btn-refresh">🔄 Actualizar</button>
+                </div>
+                <div id="lista-turnos" class="grid-turnos">
+                    <p class="loading">Cargando...</p>
+                </div>
+            </div>
+
+            <div id="tab-servicios" class="tab-content" style="display: none;">
+                <h2>Gestionar Precios</h2>
+                <div id="lista-servicios" class="list-editor"></div>
+                <form id="form-add-servicio" class="add-form">
+                    <input type="text" name="nombre" placeholder="Nuevo servicio..." required>
+                    <input type="number" name="precio" placeholder="Precio ($)" required>
+                    <button type="submit">➕ Agregar</button>
+                </form>
+            </div>
+
+            <div id="tab-equipo" class="tab-content" style="display: none;">
+                <h2>Gestionar Barberos</h2>
+                <p class="section-desc">Configura los horarios y descansos.</p>
+                <div id="lista-barberos" class="list-editor"></div>
+                <form id="form-add-barbero" class="add-form">
+                    <input type="text" name="nombre" placeholder="Nombre..." required>
+                    <button type="submit">➕ Agregar Barbero</button>
+                </form>
+            </div>
+
+            <div id="tab-bloqueos" class="tab-content" style="display: none;">
+                <h2>Bloquear Días</h2>
+                <div class="block-controls" style="align-items: center;">
+                    <div class="input-icon-container" style="flex: 2;">
+                        <input type="text" id="fecha-bloqueo" placeholder="Toca para elegir el día..." class="input-flatpickr" readonly>
+                    </div>
+                    <button id="btn-bloquear" class="btn-danger" style="flex: 1;">⛔ Bloquear Día</button>
+                </div>
+                
+                <h3 style="margin-top:20px; color:#94a3b8; font-size:0.9rem;">Días Cerrados:</h3>
+                <ul id="lista-bloqueos" class="simple-list"></ul>
+            </div>
+
+        </div>
+    </main>
+</Layout>
+
+<script type="module" define:vars={{ SUPABASE_URL, SUPABASE_KEY, NEGOCIO_ID: negocio.id }}>
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // --- AUTH ---
+    async function checkAuth() {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+            localStorage.setItem('redirect_after_login', window.location.href);
+            window.location.href = '/admin/login';
+        } else {
+            document.getElementById('main-admin').style.display = 'block';
+            initDashboard();
+        }
+    }
+    checkAuth();
+
+    // --- REFS ---
+    const listaTurnos = document.getElementById('lista-turnos');
+    const listaServicios = document.getElementById('lista-servicios');
+    const listaBarberos = document.getElementById('lista-barberos');
+    const listaBloqueos = document.getElementById('lista-bloqueos');
+
+    function initDashboard() {
+        if(typeof flatpickr !== 'undefined') {
+            flatpickr("#fecha-bloqueo", { locale: "es", dateFormat: "Y-m-d", minDate: "today", disableMobile: true, theme: "dark" });
+        }
+        cargarTurnos();
+        cargarServicios();
+        cargarBarberos();
+        cargarBloqueos();
+    }
+
+    // --- CARGA ---
+    async function cargarTurnos() {
+        listaTurnos.innerHTML = '<p class="loading">Cargando...</p>';
+        const hoy = new Date().toISOString().split('T')[0];
+        const { data, error } = await supabase.from('turnos').select('*').eq('negocio_id', NEGOCIO_ID).gte('fecha', hoy).order('fecha').order('hora');
+        
+        if (error || !data || data.length === 0) { 
+            listaTurnos.innerHTML = '<p class="empty">No hay turnos próximos.</p>'; return; 
+        }
+
+        listaTurnos.innerHTML = data.map(t => {
+        // Formateamos mensaje de WhatsApp
+        // "Hola [Nombre], te escribo de [Negocio] para confirmar tu turno el [Fecha] a las [Hora]."
+        const telefono = t.cliente_telefono ? t.cliente_telefono.replace(/\D/g, '') : '';
+        const mensaje = `Hola ${t.cliente_nombre}, te escribo de la Barbería para confirmar tu turno el día ${t.fecha.split('-').reverse().join('/')} a las ${t.hora.slice(0,5)} hs. 💈`;
+        const linkWsp = telefono ? `https://wa.me/549${telefono}?text=${encodeURIComponent(mensaje)}` : '#';
+
+        return `
+            <div class="card-turno">
+                <div class="turno-header">
+                    <span class="fecha-hora">📅 ${t.fecha.split('-').reverse().join('/')} - ${t.hora.slice(0,5)} hs</span>
+                    <span class="servicio-tag">${t.servicio}</span>
+                </div>
+                <div class="turno-body">
+                    <strong>${t.cliente_nombre} ${t.cliente_apellido}</strong>
+                    <div class="meta">
+                        <span>💈 ${t.profesional}</span>
+                    </div>
+                </div>
+                
+                <div class="turno-actions" style="display:flex; gap:10px; margin-top:15px; border-top:1px solid #334155; padding-top:10px;">
+                    ${telefono ? `
+                        <a href="${linkWsp}" target="_blank" class="btn-wsp" style="flex:1; text-align:center; background:#22c55e; color:white; padding:8px; border-radius:6px; text-decoration:none; font-size:0.9rem; font-weight:bold;">
+                            📱 WhatsApp
+                        </a>
+                    ` : '<span style="flex:1; text-align:center; color:#64748b; font-size:0.8rem; padding:8px;">Sin Teléfono</span>'}
+                    
+                    <button class="btn-delete-sm action-btn" data-action="delete-turno" data-id="${t.id}" title="Cancelar" style="position:static; background:#ef4444; color:white; border:none; border-radius:6px; width:40px; font-size:1.2rem;">
+                        🗑️
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+    }
+
+    async function cargarServicios() {
+        const { data } = await supabase.from('servicios').select('*').eq('negocio_id', NEGOCIO_ID).order('precio');
+        listaServicios.innerHTML = data ? data.map(s => `
+            <div class="row-editor">
+                <input type="text" value="${s.nombre}" id="name-${s.id}">
+                <input type="number" value="${s.precio}" id="price-${s.id}">
+                <button class="btn-save action-btn" data-action="save-servicio" data-id="${s.id}">💾</button>
+                <button class="btn-del-serv action-btn" data-action="delete-servicio" data-id="${s.id}">❌</button>
+            </div>
+        `).join('') : '<p class="empty">Sin servicios</p>';
+    }
+
+    async function cargarBarberos() {
+        const { data } = await supabase.from('profesionales').select('*').eq('negocio_id', NEGOCIO_ID).order('created_at');
+        if (!data || data.length === 0) { listaBarberos.innerHTML = '<p class="empty">No hay barberos.</p>'; return; }
+        
+        listaBarberos.innerHTML = data.map(p => {
+            const defaultH = {"1":{"i":"10:00","f":"20:00","activo":true},"2":{"i":"10:00","f":"20:00","activo":true},"3":{"i":"10:00","f":"20:00","activo":true},"4":{"i":"10:00","f":"20:00","activo":true},"5":{"i":"10:00","f":"20:00","activo":true},"6":{"i":"10:00","f":"20:00","activo":true},"0":{"i":"10:00","f":"20:00","activo":false}};
+            const h = p.horarios || defaultH;
+            const dias = [{k:"1",l:"Lun"},{k:"2",l:"Mar"},{k:"3",l:"Mié"},{k:"4",l:"Jue"},{k:"5",l:"Vie"},{k:"6",l:"Sáb"}];
+
+            const gridDias = dias.map(d => {
+                const dd = h[d.k] || {i: "10:00", f: "20:00", activo: false, break: false, bi: "13:00", bf: "14:00"};
+                const rowClass = dd.activo ? 'day-active' : 'day-inactive';
+                const breakClass = dd.break ? 'break-active' : '';
+
+                return `
+                    <div class="day-row ${rowClass}">
+                        <div class="day-main">
+                            <label class="day-check">
+                                <input type="checkbox" id="check-${p.id}-${d.k}" ${dd.activo?'checked':''} class="toggle-day"> 
+                                <span class="day-label">${d.l}</span>
+                            </label>
+                            <div class="time-group">
+                                <span class="icon">☀️</span>
+                                <input type="time" value="${dd.i}" id="ini-${p.id}-${d.k}" class="time-input" ${!dd.activo?'disabled':''}> 
+                                <span class="sep">a</span> 
+                                <input type="time" value="${dd.f}" id="fin-${p.id}-${d.k}" class="time-input" ${!dd.activo?'disabled':''}>
+                            </div>
+                        </div>
+                        <div class="day-break ${breakClass}">
+                            <label class="break-check" title="Activar Descanso">
+                                <input type="checkbox" id="bcheck-${p.id}-${d.k}" ${dd.break?'checked':''} class="toggle-break" ${!dd.activo?'disabled':''}>
+                                <span class="icon">☕ Break</span>
+                            </label>
+                            <div class="break-inputs ${!dd.break ? 'hidden' : ''}">
+                                <input type="time" value="${dd.bi || '13:00'}" id="bini-${p.id}-${d.k}" class="time-xs"> 
+                                <span class="sep">-</span> 
+                                <input type="time" value="${dd.bf || '14:00'}" id="bfin-${p.id}-${d.k}" class="time-xs">
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            return `
+            <div class="barber-card-wrapper">
+                <div class="row-editor barber-main-row">
+                    <div class="barber-name-group">
+                        <span class="avatar">💈</span>
+                        <input type="text" value="${p.nombre}" id="barb-${p.id}" class="name-input">
+                    </div>
+                    <div class="barber-actions">
+                        <button class="btn-toggle-week action-btn" data-action="toggle-week" data-id="${p.id}">📅 Horarios</button>
+                        <button class="btn-save-barb action-btn" data-action="save-barbero" data-id="${p.id}">💾</button>
+                        <button class="btn-del-barb action-btn" data-action="delete-barbero" data-id="${p.id}">🗑️</button>
+                    </div>
+                </div>
+                <div id="week-${p.id}" class="week-config">
+                    <div class="week-header"><span>Día Laboral</span><span>Descanso</span></div>
+                    <div class="week-grid">${gridDias}</div>
+                </div>
+            </div>
+            `;
+        }).join('');
+    }
+
+    async function cargarBloqueos() {
+        const hoy = new Date().toISOString().split('T')[0];
+        const { data } = await supabase.from('dias_especiales').select('*').eq('negocio_id', NEGOCIO_ID).gte('fecha', hoy);
+        
+        // MOSTRAR SOLO FECHA Y BOTÓN
+        listaBloqueos.innerHTML = data ? data.map(d => `
+            <li>
+                <span style="font-weight:bold; color:white;">📅 ${d.fecha.split('-').reverse().join('/')}</span>
+                <button class="action-btn" data-action="delete-bloqueo" data-id="${d.id}" style="background:transparent; border:none; font-size:1.2rem; cursor:pointer;">❌</button>
+            </li>
+        `).join('') : '';
+    }
+
+    // --- EVENTOS ---
+    document.getElementById('btn-logout').addEventListener('click', async () => {
+        if(confirm('¿Cerrar sesión?')) { await supabase.auth.signOut(); window.location.href = '/admin/login'; }
+    });
+
+    ['turnos', 'servicios', 'equipo', 'bloqueos'].forEach(tab => {
+        document.getElementById(`btn-${tab}`).addEventListener('click', () => {
+            document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById(`tab-${tab}`).style.display = 'block';
+            document.getElementById(`btn-${tab}`).classList.add('active');
+        });
+    });
+
+    document.body.addEventListener('click', async (e) => {
+        if(e.target.classList.contains('toggle-day')) {
+            const row = e.target.closest('.day-row');
+            const isActive = e.target.checked;
+            row.classList.toggle('day-active', isActive); row.classList.toggle('day-inactive', !isActive);
+            row.querySelectorAll('input[type="time"], .toggle-break').forEach(inp => inp.disabled = !isActive);
+        }
+        if(e.target.classList.contains('toggle-break')) {
+            const container = e.target.closest('.day-break');
+            const isActive = e.target.checked;
+            container.classList.toggle('break-active', isActive);
+            container.querySelector('.break-inputs').classList.toggle('hidden', !isActive);
+        }
+
+        const btn = e.target.closest('.action-btn'); if (!btn) return;
+        e.preventDefault();
+        const action = btn.dataset.action; const id = btn.dataset.id;
+
+        try {
+            if (action === 'toggle-week') { 
+                document.getElementById(`week-${id}`).classList.toggle('open'); 
+                btn.classList.toggle('active');
+            }
+            else if (action === 'delete-turno') { if(confirm('¿Borrar?')) { await supabase.from('turnos').delete().eq('id', id); cargarTurnos(); } }
+            else if (action === 'save-servicio') {
+                const nombre = document.getElementById(`name-${id}`).value;
+                const precio = document.getElementById(`price-${id}`).value;
+                await supabase.from('servicios').update({ nombre, precio }).eq('id', id); alert('Actualizado');
+            }
+            else if (action === 'delete-servicio') { if(confirm('¿Borrar?')) { await supabase.from('servicios').delete().eq('id', id); cargarServicios(); } }
+            else if (action === 'save-barbero') {
+                const nombre = document.getElementById(`barb-${id}`).value;
+                let nuevosH = {}; nuevosH["0"] = {"i":"10:00","f":"20:00","activo":false};
+                for(let i=1; i<=6; i++) {
+                    const k = i.toString();
+                    const check = document.getElementById(`check-${id}-${k}`);
+                    if(check) {
+                         nuevosH[k] = {
+                            activo: check.checked,
+                            i: document.getElementById(`ini-${id}-${k}`).value,
+                            f: document.getElementById(`fin-${id}-${k}`).value,
+                            break: document.getElementById(`bcheck-${id}-${k}`).checked,
+                            bi: document.getElementById(`bini-${id}-${k}`).value,
+                            bf: document.getElementById(`bfin-${id}-${k}`).value
+                        };
+                    }
+                }
+                await supabase.from('profesionales').update({ nombre, horarios: nuevosH }).eq('id', id); alert('Guardado');
+            }
+            else if (action === 'delete-barbero') { if(confirm('¿Borrar?')) { await supabase.from('profesionales').delete().eq('id', id); cargarBarberos(); } }
+            else if (action === 'delete-bloqueo') { await supabase.from('dias_especiales').delete().eq('id', id); cargarBloqueos(); }
+        } catch (err) { console.error(err); alert(err.message); }
+    });
+
+    // Forms
+    document.getElementById('form-add-servicio').addEventListener('submit', async (e) => {
+        e.preventDefault(); const form = new FormData(e.target);
+        await supabase.from('servicios').insert({ negocio_id: NEGOCIO_ID, nombre: form.get('nombre'), precio: form.get('precio') });
+        e.target.reset(); cargarServicios();
+    });
+    document.getElementById('form-add-barbero').addEventListener('submit', async (e) => {
+        e.preventDefault(); const form = new FormData(e.target);
+        const defaultH = {"1":{"i":"10:00","f":"20:00","activo":true},"2":{"i":"10:00","f":"20:00","activo":true},"3":{"i":"10:00","f":"20:00","activo":true},"4":{"i":"10:00","f":"20:00","activo":true},"5":{"i":"10:00","f":"20:00","activo":true},"6":{"i":"10:00","f":"20:00","activo":true},"0":{"i":"10:00","f":"20:00","activo":false}};
+        await supabase.from('profesionales').insert({ negocio_id: NEGOCIO_ID, nombre: form.get('nombre'), horarios: defaultH });
+        e.target.reset(); cargarBarberos();
+    });
+    
+    // --- LÓGICA DE BLOQUEO (SIN MOTIVO) ---
+    document.getElementById('btn-bloquear').addEventListener('click', async () => {
+        const fecha = document.getElementById('fecha-bloqueo').value;
+        // YA NO BUSCAMOS MOTIVO
+        
+        if(!fecha) return alert('Por favor selecciona una fecha');
+        
+        // Guardamos "Cerrado" automáticamente como motivo interno
+        await supabase.from('dias_especiales').insert({ 
+            negocio_id: NEGOCIO_ID, 
+            fecha, 
+            motivo: 'Cerrado', 
+            cerrado: true 
+        });
+        
+        cargarBloqueos();
+    });
+    
+    document.getElementById('refresh-turnos').addEventListener('click', cargarTurnos);
+</script>
+
+<style is:global>
+    :root { --barber-red: #D92525; --barber-blue: #1E3A8A; --bg-dark: #0f172a; --bg-card: #1e293b; --text-muted: #94a3b8; --border: #334155; }
+    body { margin: 0; background: var(--bg-dark); font-family: sans-serif; overflow-x: hidden; }
+    * { box-sizing: border-box; }
+
+    /* LAYOUT & HEADER */
+    .admin-wrapper { min-height: 100vh; color: white; padding-bottom: 80px; width: 100%; }
+    
+    .admin-header { 
+        background: var(--bg-card); 
+        padding: 1.2rem; 
+        border-bottom: 1px solid var(--border);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    }
+    .header-inner { display: flex; justify-content: space-between; align-items: center; max-width: 900px; margin: 0 auto; }
+    
+    .brand { display: flex; align-items: center; gap: 10px; }
+    .brand .icon { font-size: 1.5rem; }
+    .brand h1 { margin: 0; font-size: 1.2rem; font-weight: 800; letter-spacing: 1px; color: white; }
+
+    .btn-logout { 
+        background: rgba(255,255,255,0.05); 
+        border: 1px solid rgba(255,255,255,0.1); 
+        color: var(--text-muted); 
+        padding: 8px 15px; 
+        border-radius: 8px; 
+        cursor: pointer; 
+        font-size: 0.85rem; 
+        display: flex; align-items: center; gap: 8px; transition: 0.2s; 
+    }
+    .btn-logout:hover { background: var(--barber-red); color: white; border-color: var(--barber-red); }
+
+    /* NAV */
+    .admin-nav { display: flex; gap: 5px; padding: 15px; overflow-x: auto; justify-content: center; }
+    .tab-btn { padding: 10px 20px; background: transparent; border: none; color: var(--text-muted); font-weight: 600; cursor: pointer; border-radius: 8px; transition: 0.2s; }
+    .tab-btn:hover { background: rgba(255,255,255,0.05); color: white; }
+    .tab-btn.active { background: var(--barber-blue); color: white; box-shadow: 0 4px 12px rgba(30, 58, 138, 0.4); }
+
+    /* CONTENT */
+    .content-area { padding: 20px 15px; width: 100%; max-width: 800px; margin: 0 auto; }
+    .tab-content { display: none; animation: fadeIn 0.3s; }
+    .tab-content.active { display: block; }
+    .section-desc { color: #64748b; margin-bottom: 25px; text-align: center; }
+    .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .btn-refresh { background: var(--barber-blue); color: white; border: none; padding: 8px 15px; border-radius: 6px; cursor: pointer; }
+
+    /* --- AGENDA CARDS (RESTAURADOS) --- */
+    .grid-turnos { display: grid; gap: 15px; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+    .card-turno { 
+        background: var(--bg-card); 
+        border: 1px solid var(--border); 
+        border-radius: 12px; 
+        padding: 15px; 
+        position: relative; 
+        border-left: 4px solid var(--barber-blue); 
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
+    }
+    .turno-header { 
+        display: flex; justify-content: space-between; 
+        font-size: 0.85rem; color: var(--text-muted); 
+        margin-bottom: 10px; border-bottom: 1px solid #334155; padding-bottom: 8px; 
+    }
+    .turno-body strong { display: block; font-size: 1.1rem; margin-bottom: 5px; color: white; }
+    .meta { display: flex; flex-direction: column; gap: 2px; font-size: 0.9rem; color: #cbd5e1; }
+    
+    .btn-delete-sm { 
+        position: absolute; bottom: 10px; right: 10px; 
+        background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); 
+        color: #ef4444; border-radius: 6px;
+        cursor: pointer; font-size: 1rem; padding: 6px 10px;
+        transition: 0.2s;
+    }
+    .btn-delete-sm:hover { background: #ef4444; color: white; }
+
+    /* --- EDITORES (INPUTS ARREGLADOS) --- */
+    .list-editor { display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px; }
+    .row-editor { display: flex; gap: 10px; align-items: center; background: #1e293b; padding: 15px; border-radius: 12px; border: 1px solid var(--border); flex-wrap: wrap; }
+
+    input { background: #0f172a; border: 1px solid #475569; color: white; padding: 10px; border-radius: 6px; outline: none; flex: 1; min-width: 0; box-sizing: border-box; }
+    input:focus { border-color: var(--barber-blue); }
+
+    /* BARBEROS */
+    .barber-card-wrapper { margin-bottom: 15px; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); background: #1a2333; }
+    .barber-main-row { display: flex; justify-content: space-between; align-items: center; padding: 15px; background: #243045; gap: 10px; flex-wrap: wrap; }
+    .barber-name-group { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 200px; }
+    .name-input { font-size: 1.1rem; font-weight: bold; border: none !important; background: transparent !important; width: 100%; padding: 0 !important; }
+    .barber-actions { display: flex; gap: 5px; }
+    
+    .week-config { display: none; background: #151e2e; padding: 15px; border-top: 1px solid var(--border); }
+    .week-config.open { display: block; }
+
+    /* BOTONES */
+    .btn-save, .btn-save-barb { background: var(--barber-blue); color: white; padding: 10px 15px; border-radius: 6px; border:none; }
+    .btn-del-serv, .btn-del-barb { background: var(--barber-red); color: white; padding: 10px 15px; border-radius: 6px; border:none; }
+    .btn-toggle-week { background: #334155; color: white; padding: 10px; border-radius: 6px; border:none; }
+    
+    .add-form, .block-controls { display: flex; gap: 10px; flex-wrap: wrap; background: rgba(255,255,255,0.03); padding: 15px; border-radius: 8px; border: 1px dashed #475569; margin-top: 10px; }
+    .add-form button, .btn-danger { background: #22c55e; color: white; border: none; padding: 12px; flex-grow: 1; border-radius: 6px; }
+    .btn-danger { background: var(--barber-red); }
+
+    /* GRID DIAS (ESTILO BARBEROS) */
+    .day-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; background: rgba(255,255,255,0.02); padding: 8px 12px; border-radius: 6px; align-items: center; margin-bottom: 5px; border-left: 3px solid transparent; }
+    .day-row.day-active { border-left-color: #22c55e; background: rgba(34, 197, 94, 0.05); }
+    .day-main, .day-break { display: flex; align-items: center; gap: 10px; }
+    .time-input { max-width: 80px; text-align: center; }
+    .time-xs { max-width: 65px; padding: 4px !important; font-size: 0.8rem !important; }
+
+    /* RESPONSIVE */
+    @media (max-width: 700px) {
+        .admin-wrapper { padding: 0; }
+        .row-editor { flex-direction: column; align-items: stretch; }
+        .row-editor input { width: 100%; margin-bottom: 5px; }
+        .barber-actions { justify-content: space-between; margin-top: 10px; }
+        .barber-actions button { flex: 1; }
+        .day-row { grid-template-columns: 1fr; gap: 10px; padding: 12px; }
+    }
+
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .loading, .empty { text-align: center; padding: 20px; color: var(--text-muted); }
+    .simple-list li { display: flex; justify-content: space-between; padding: 15px; border-bottom: 1px solid #334155; background: var(--bg-card); align-items: center; }
+</style>
