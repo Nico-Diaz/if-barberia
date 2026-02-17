@@ -1,5 +1,10 @@
 ---
+// src/pages/login.astro (o donde lo tengas)
 import Layout from '../../layouts/Layout.astro';
+
+// 1. LEER VARIABLES EN EL SERVIDOR
+const PUBLIC_SUPABASE_URL = import.meta.env.PUBLIC_SUPABASE_URL;
+const PUBLIC_SUPABASE_KEY = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
 ---
 
 <Layout title="Admin Login">
@@ -29,36 +34,63 @@ import Layout from '../../layouts/Layout.astro';
     </main>
 </Layout>
 
-<script>
+<script type="module" define:vars={{ PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_KEY }}>
     import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
-    const SUPABASE_URL = import.meta.env.PUBLIC_SUPABASE_URL;
-    const SUPABASE_KEY = import.meta.env.PUBLIC_SUPABASE_KEY;
-    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+    // Verificación de seguridad
+    if (!PUBLIC_SUPABASE_URL || !PUBLIC_SUPABASE_KEY) {
+        console.error("⛔ Faltan las variables de entorno en el cliente.");
+        document.getElementById('error-msg').innerText = "Error de configuración del sistema.";
+        document.getElementById('error-msg').style.display = 'block';
+    }
+
+    const supabase = createClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_KEY);
 
     const form = document.getElementById('login-form');
     const btn = document.getElementById('btn-login');
     const errorMsg = document.getElementById('error-msg');
 
-    // VERIFICAR SI YA ESTÁ LOGUEADO
+    // --- A. VERIFICAR SESIÓN ACTIVA ---
     async function checkSession() {
         const { data } = await supabase.auth.getSession();
+        
         if (data.session) {
-            // Intentar recuperar el último negocio visitado
-            const lastSlug = localStorage.getItem('last_admin_slug');
-            if(lastSlug) {
-                window.location.href = `/admin/${lastSlug}/dashboard`;
-            } else {
-                // Si no hay historial, avisar (porque no sabemos a qué negocio mandarlo)
-                console.log("Sesión activa, pero no sé a qué dashboard ir.");
-            }
+            console.log("Sesión activa, redirigiendo...");
+            redirigirUsuario();
         }
     }
+    
+    // Ejecutamos chequeo al cargar
     checkSession();
 
-    // LOGIN
+    // --- B. LÓGICA DE REDIRECCIÓN ---
+    function redirigirUsuario() {
+        // 1. Prioridad: ¿Intentó entrar a una URL específica antes?
+        const redirectUrl = localStorage.getItem('redirect_after_login');
+        if (redirectUrl) {
+            localStorage.removeItem('redirect_after_login');
+            window.location.href = redirectUrl;
+            return;
+        }
+
+        // 2. Prioridad: ¿Cuál fue el último negocio que administró?
+        const lastSlug = localStorage.getItem('last_admin_slug');
+        if (lastSlug) {
+            window.location.href = `/admin/${lastSlug}/dashboard`;
+            return;
+        }
+
+        // 3. Fallback: No sabemos a dónde ir
+        // Aquí podrías redirigir a una página de "Selección de Negocio" si tienes una
+        console.warn("Usuario logueado pero sin destino conocido.");
+        // Opcional: window.location.href = '/admin/seleccionar-negocio';
+        alert("Login exitoso. No se detectó un negocio previo. Por favor navega manualmente a tu panel.");
+    }
+
+    // --- C. LOGIN ---
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
+        
         btn.disabled = true;
         btn.innerText = "Verificando...";
         errorMsg.style.display = 'none';
@@ -73,23 +105,19 @@ import Layout from '../../layouts/Layout.astro';
         });
 
         if (error) {
+            console.error("Error Login:", error.message);
             errorMsg.innerText = "❌ Credenciales incorrectas";
             errorMsg.style.display = 'block';
             btn.disabled = false;
             btn.innerText = "INGRESAR 🔐";
         } else {
             btn.innerText = "¡Éxito!";
-            btn.style.background = "#22c55e";
+            btn.style.background = "#22c55e"; // Verde éxito
             
-            // Redirigir
-            const redirectUrl = localStorage.getItem('redirect_after_login');
-            if (redirectUrl) {
-                localStorage.removeItem('redirect_after_login');
-                window.location.href = redirectUrl;
-            } else {
-                // Si entró directo al login sin intentar ir a un dashboard
-                alert("Login correcto. Por favor ingresa nuevamente a la URL de tu panel de administración.");
-            }
+            // Esperar un momento breve para feedback visual
+            setTimeout(() => {
+                redirigirUsuario();
+            }, 500);
         }
     });
 </script>
@@ -110,7 +138,6 @@ import Layout from '../../layouts/Layout.astro';
         min-height: 100vh;
         font-family: system-ui, sans-serif;
         
-        /* FONDO EN EL BODY PARA CUBRIR TODO */
         background-color: var(--bg-dark);
         background-image: linear-gradient(
             45deg,
@@ -124,7 +151,6 @@ import Layout from '../../layouts/Layout.astro';
         );
         background-size: 100px 100px;
         
-        /* Centrado Flex Global */
         display: flex;
         justify-content: center;
         align-items: center;
@@ -132,12 +158,13 @@ import Layout from '../../layouts/Layout.astro';
 </style>
 
 <style>
-    /* El wrapper ahora solo contiene la tarjeta, no define el fondo */
     .login-wrapper {
         width: 100%;
         padding: 20px;
         display: flex;
         justify-content: center;
+        align-items: center; /* Asegura centrado vertical */
+        min-height: 100vh;
     }
     
     .login-card { 
@@ -149,14 +176,15 @@ import Layout from '../../layouts/Layout.astro';
         box-shadow: 0 20px 50px rgba(0,0,0,0.5); 
         border: 1px solid rgba(255,255,255,0.1);
         backdrop-filter: blur(10px);
+        animation: fadeIn 0.5s ease-out;
     }
 
     .brand-header { text-align: center; margin-bottom: 30px; }
-    .brand-header h1 { color: white; margin: 0; text-transform: uppercase; letter-spacing: 2px; font-size: 1.5rem; }
-    .barber-stripe { height: 6px; width: 100px; margin: 15px auto; background: repeating-linear-gradient(45deg, var(--barber-red), var(--barber-red) 10px, white 10px, white 20px, var(--barber-blue) 20px, var(--barber-blue) 30px, white 30px, white 40px); border-radius: 4px; }
+    .brand-header h1 { color: white; margin: 0; text-transform: uppercase; letter-spacing: 2px; font-size: 1.5rem; font-weight: 900; }
+    .barber-stripe { height: 6px; width: 100px; margin: 15px auto; background: repeating-linear-gradient(45deg, var(--barber-red), var(--barber-red) 10px, white 10px, white 20px, var(--barber-blue) 20px, var(--barber-blue) 30px, white 30px, white 40px); border-radius: 4px; box-shadow: 0 0 10px rgba(0,0,0,0.5); }
 
     .input-group { margin-bottom: 20px; }
-    label { display: block; color: var(--text-muted); font-size: 0.85rem; margin-bottom: 8px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
+    label { display: block; color: var(--text-muted); font-size: 0.8rem; margin-bottom: 8px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
     
     input { 
         width: 100%; 
@@ -170,11 +198,14 @@ import Layout from '../../layouts/Layout.astro';
         box-sizing: border-box; 
         transition: 0.2s;
     }
-    input:focus { border-color: var(--barber-blue); box-shadow: 0 0 0 3px rgba(30, 58, 138, 0.2); }
+    input:focus { border-color: var(--barber-blue); box-shadow: 0 0 0 3px rgba(30, 58, 138, 0.2); background: #172033; }
 
     button { width: 100%; padding: 16px; background: var(--barber-blue); color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 1rem; cursor: pointer; transition: 0.2s; margin-top: 10px; text-transform: uppercase; letter-spacing: 1px; }
-    button:hover { filter: brightness(1.2); transform: translateY(-1px); }
-    button:disabled { opacity: 0.7; cursor: wait; transform: none; }
+    button:hover { filter: brightness(1.2); transform: translateY(-2px); box-shadow: 0 5px 15px rgba(30, 58, 138, 0.4); }
+    button:disabled { opacity: 0.7; cursor: wait; transform: none; box-shadow: none; }
 
-    .error-msg { background: rgba(220, 38, 38, 0.2); color: #ef4444; padding: 12px; border-radius: 6px; text-align: center; margin-bottom: 20px; border: 1px solid rgba(220, 38, 38, 0.5); font-weight: bold; font-size: 0.9rem; }
+    .error-msg { background: rgba(220, 38, 38, 0.1); color: #ef4444; padding: 12px; border-radius: 6px; text-align: center; margin-bottom: 20px; border: 1px solid rgba(220, 38, 38, 0.3); font-weight: bold; font-size: 0.9rem; animation: shake 0.3s ease-in-out; }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
 </style>
