@@ -3,11 +3,11 @@
 const { negocio, servicios, profesionales } = Astro.props;
 
 // Formateador de dinero
-const formatMoney = (amount) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 }).format(amount);
+const formatMoney = (amount: number) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 }).format(amount);
 
 // Variables
 const SUPABASE_URL = import.meta.env.PUBLIC_SUPABASE_URL;
-const SUPABASE_KEY = import.meta.env.PUBLIC_SUPABASE_KEY;
+const SUPABASE_KEY = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
 
 // Horario por defecto (Fallback)
 const defaultHorarios = {
@@ -32,52 +32,60 @@ const defaultHorarios = {
 
     <div class="card-form">
         <form id="booking-form">
-            <div class="section-label">1. SERVICIO</div>
-            <div class="services-grid">
-                {servicios?.length > 0 ? servicios.map((s, index) => (
-                    <div class="service-item">
-                        <input type="radio" name="servicio" id={`s-${s.id}`} value={s.nombre} required checked={index === 0}>
-                        <label for={`s-${s.id}`} class="service-card primary-hover">
-                            <span class="service-name">{s.nombre}</span>
-                            <span class="service-price">{formatMoney(s.precio)}</span>
-                        </label>
+            <div class="form-grid-desktop">
+                <!-- COLUMNA IZQUIERDA -->
+                <div class="form-col">
+                    <div class="section-label">1. SERVICIO</div>
+                    <div class="services-grid">
+                        {servicios?.length > 0 ? servicios.map((s: any, index: number) => (
+                            <div class="service-item">
+                                <input type="radio" name="servicio" id={`s-${s.id}`} value={s.nombre} required checked={index === 0}>
+                                <label for={`s-${s.id}`} class="service-card primary-hover">
+                                    <span class="service-name">{s.nombre}</span>
+                                    <span class="service-price">{formatMoney(s.precio)}</span>
+                                </label>
+                            </div>
+                        )) : <p class="error-txt">No hay servicios.</p>}
                     </div>
-                )) : <p class="error-txt">No hay servicios.</p>}
-            </div>
 
-            <div class="section-label">2. PROFESIONAL</div>
-            <div class="services-grid three-cols" id="container-profesionales">
-                {profesionales?.length > 0 ? profesionales.map((p, index) => (
-                    <div class="service-item">
-                        <input type="radio" name="profesional" id={`p-${p.id}`} value={p.nombre} 
-                               data-horarios={JSON.stringify(p.horarios || defaultHorarios)}
-                               required checked={index === 0} class="radio-pro">
-                        <label for={`p-${p.id}`} class="service-card secondary-hover">
-                            <span class="service-name">{p.nombre}</span>
-                        </label>
-                    </div>
-                )) : <p class="error-txt">No hay profesionales.</p>}
-            </div>
-
-            <div class="section-label">3. TUS DATOS</div>
-            <div class="row-group">
-                <div class="field-wrapper"><label>NOMBRE</label><input type="text" name="nombre" required class="input-app"></div>
-                <div class="field-wrapper"><label>APELLIDO</label><input type="text" name="apellido" required class="input-app"></div>
-            </div>
-            <div class="field-wrapper full-width"><label>WHATSAPP</label><input type="tel" name="telefono" placeholder="Ej: 11 1234 5678" class="input-app"></div>
-
-            <div class="section-label">4. TURNO</div>
-            <div class="row-group">
-                <div class="field-wrapper relative-wrapper">
-                    <label>FECHA</label>
-                    <div class="input-icon-container" id="container-fecha">
-                        <input type="text" name="fecha" id="input-fecha" required placeholder="Toca para elegir..." class="input-app" autocomplete="off">
-                        <span class="calendar-trigger">📅</span>
+                    <div class="section-label">2. PROFESIONAL</div>
+                    <div class="services-grid three-cols" id="container-profesionales">
+                        {profesionales?.length > 0 ? profesionales.map((p: any, index: number) => (
+                            <div class="service-item">
+                                <input type="radio" name="profesional" id={`p-${p.id}`} value={p.nombre} 
+                                       data-horarios={JSON.stringify(p.horarios || defaultHorarios)}
+                                       required checked={index === 0} class="radio-pro">
+                                <label for={`p-${p.id}`} class="service-card secondary-hover">
+                                    <span class="service-name">{p.nombre}</span>
+                                </label>
+                            </div>
+                        )) : <p class="error-txt">No hay profesionales.</p>}
                     </div>
                 </div>
-                <div class="field-wrapper">
-                    <label>HORA</label>
-                    <select name="hora" id="select-hora" required disabled class="input-app centered"><option value="" disabled selected>--:--</option></select>
+
+                <!-- COLUMNA DERECHA -->
+                <div class="form-col">
+                    <div class="section-label label-mobile-mt">3. TUS DATOS</div>
+                    <div class="row-group">
+                        <div class="field-wrapper"><label>NOMBRE</label><input type="text" name="nombre" required class="input-app"></div>
+                        <div class="field-wrapper"><label>APELLIDO</label><input type="text" name="apellido" required class="input-app"></div>
+                    </div>
+                    <div class="field-wrapper full-width"><label>WHATSAPP</label><input type="tel" name="telefono" placeholder="Ej: 11 1234 5678" class="input-app"></div>
+
+                    <div class="section-label">4. TURNO</div>
+                    <div class="row-group">
+                        <div class="field-wrapper relative-wrapper">
+                            <label>FECHA</label>
+                            <div class="input-icon-container" id="container-fecha">
+                                <input type="text" name="fecha" id="input-fecha" required placeholder="Toca para elegir..." class="input-app" autocomplete="off">
+                                <span class="calendar-trigger">📅</span>
+                            </div>
+                        </div>
+                        <div class="field-wrapper">
+                            <label>HORA</label>
+                            <select name="hora" id="select-hora" required disabled class="input-app centered"><option value="" disabled selected>--:--</option></select>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -176,6 +184,15 @@ const defaultHorarios = {
                     let minA = hA*60 + mA; 
                     let minF = hF*60 + mF;
 
+                    // Descansos
+                    let minDescI = -1, minDescF = -1;
+                    if (configDia.di && configDia.df) {
+                        let [hdI, mdI] = configDia.di.split(':').map(Number);
+                        let [hdF, mdF] = configDia.df.split(':').map(Number);
+                        minDescI = hdI*60 + mdI;
+                        minDescF = hdF*60 + mdF;
+                    }
+
                     // C. Lógica para "HOY": No mostrar horas pasadas
                     const isToday = dateObj.toDateString() === new Date().toDateString();
                     const now = new Date();
@@ -201,6 +218,12 @@ const defaultHorarios = {
                     let count = 0;
 
                     while(minA < minF) {
+                        // Saltar si la hora cae dentro del lapso de descanso
+                        if (minDescI !== -1 && minA >= minDescI && minA < minDescF) {
+                            minA += 30;
+                            continue;
+                        }
+
                         let h = Math.floor(minA/60);
                         let m = minA%60;
                         let txt = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
@@ -266,11 +289,21 @@ const defaultHorarios = {
     :root { --barber-red: #D92525; --barber-blue: #1E3A8A; --barber-white: #ffffff; --primary: var(--barber-blue); --secondary: var(--barber-red); }
     .flatpickr-calendar { z-index: 99999999 !important; box-shadow: 0 0 50px rgba(0,0,0,0.8) !important; background: #1f2937 !important; position: fixed !important; top: 50% !important; left: 50% !important; transform: translate(-50%, -50%) !important; max-width: 90vw !important; }
     * { box-sizing: border-box; }
-    .booking-wrapper { width: 100%; max-width: 550px; margin: 0 auto; padding: 0 10px; }
+    .booking-wrapper { width: 100%; max-width: 900px; margin: 0 auto; padding: 0 10px; }
     .status-msg { padding: 10px; border-radius: 8px; margin-bottom: 15px; text-align: center; font-weight: bold; }
     .card-form { background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 1.5rem; padding: 1.5rem; position: relative; z-index: 1; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
     .section-label { font-family: system-ui, sans-serif; color: rgba(255,255,255,0.5); font-size: 0.9rem; letter-spacing: 1px; margin-bottom: 10px; margin-top: 25px; }
     .section-label:first-child { margin-top: 0; }
+    
+    /* Layout Desktop */
+    .form-grid-desktop { display: flex; flex-direction: column; gap: 0; }
+    .label-mobile-mt { margin-top: 25px; }
+
+    @media (min-width: 768px) {
+        .form-grid-desktop { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+        .label-mobile-mt { margin-top: 0; }
+        .card-form { padding: 2.5rem; }
+    }
     .services-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; min-height: 50px; }
     .three-cols { grid-template-columns: 1fr 1fr 1fr; }
     .error-txt { grid-column: 1 / -1; text-align: center; color: #ef4444; background: rgba(255,0,0,0.1); padding: 10px; border-radius: 8px; }

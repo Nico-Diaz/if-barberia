@@ -7,7 +7,7 @@ import { createClient } from '@supabase/supabase-js';
 export async function getStaticPaths() {
   const supabase = createClient(
     import.meta.env.PUBLIC_SUPABASE_URL,
-    import.meta.env.PUBLIC_SUPABASE_KEY
+    import.meta.env.PUBLIC_SUPABASE_ANON_KEY
   );
   
   // Buscamos TODOS los negocios para generar una página de éxito para cada uno
@@ -22,7 +22,7 @@ export async function getStaticPaths() {
 // ----------------------------------------------
 
 const { slug } = Astro.params;
-const supabase = createClient(import.meta.env.PUBLIC_SUPABASE_URL, import.meta.env.PUBLIC_SUPABASE_KEY);
+const supabase = createClient(import.meta.env.PUBLIC_SUPABASE_URL, import.meta.env.PUBLIC_SUPABASE_ANON_KEY);
 
 // Obtener datos del negocio para los colores y el teléfono
 const { data: negocio } = await supabase.from('negocios').select('*').eq('slug', slug).single();
@@ -31,7 +31,7 @@ if (!negocio) return Astro.redirect('/404');
 
 const colorP = negocio.color_primario;
 const colorS = negocio.color_secundario || '#D92525';
-const telefono = negocio.telefono_contacto || '';
+const telefono = '5492613727906'; // Se agregó 549 (Código de Argentina) para que el link de WhatsApp funcione correctamente.
 
 // Link de WhatsApp genérico (luego el cliente puede escribir lo que quiera)
 const mensajeWp = `Hola ${negocio.nombre}, acabo de reservar un turno.`;
