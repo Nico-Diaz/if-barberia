@@ -110,17 +110,19 @@ const SITE_KEY = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
                      window.location.href = `/admin/${lastSlug}/dashboard`;
                 } else {
                     // Buscar un negocio que pertenezca a este usuario específico
-                    const { data: sessionData } = await supabase.auth.getSession();
-                    const userId = sessionData?.session?.user?.id;
+                    const userId = data.user.id;
                     
                     if (userId) {
-                        const { data: negocios } = await supabase.from('negocios').select('slug').eq('user_id', userId).limit(1);
+                        const { data: negocios, error: negError } = await supabase.from('negocios').select('slug').eq('user_id', userId).limit(1);
+                        
                         if (negocios && negocios.length > 0) {
                             window.location.href = `/admin/${negocios[0].slug}/dashboard`;
                             return;
+                        } else {
+                            console.log("Error consultando negocios:", negError);
                         }
                     }
-                    alert("Login correcto. No tienes negocios asignados a tu cuenta.");
+                    alert("Login correcto pero no tienes negocios asignados a tu cuenta de Supabase. (UserID: " + userId + ")");
                 }
             }
         }
